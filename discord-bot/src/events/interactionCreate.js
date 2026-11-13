@@ -3183,6 +3183,39 @@ export default {
 
         // ── TELLONYM: Modal anônimo ──────────────────────────────────────
         if (customId === 'tellonym_anon') {
+          return interaction.reply({
+            content: [
+              '**Aviso de privacidade**',
+              'Sua mensagem continuará anônima para o restante do servidor. Para segurança, seu nome de usuário, ID do Discord e texto serão enviados por mensagem privada ao responsável de segurança (<@1543135631587151906>). Os responsáveis técnicos do bot também poderão ver os dados enviados.',
+              'Ao clicar em **Continuar**, você confirma que leu e aceita isso.',
+            ].join('\n\n'),
+            allowedMentions: { parse: [] },
+            components: [
+              new ActionRowBuilder().addComponents(
+                new ButtonBuilder()
+                  .setCustomId('tellonym_anon_confirm')
+                  .setLabel('Continuar')
+                  .setStyle(ButtonStyle.Primary),
+                new ButtonBuilder()
+                  .setCustomId('tellonym_anon_cancel')
+                  .setLabel('Cancelar')
+                  .setStyle(ButtonStyle.Secondary),
+              ),
+            ],
+            ephemeral: true,
+          });
+        }
+
+        if (customId === 'tellonym_anon_cancel') {
+          return interaction.update({
+            content: 'Envio cancelado.',
+            components: [],
+            embeds: [],
+            allowedMentions: { parse: [] },
+          });
+        }
+
+        if (customId === 'tellonym_anon_confirm') {
           const modal = new ModalBuilder().setCustomId('tellonym_modal_anon').setTitle('💌 Mensagem Anônima');
           modal.addComponents(
             new ActionRowBuilder().addComponents(
@@ -4834,6 +4867,7 @@ export default {
 // ─── Helper: Tellonym — gera imagem + envia ───────────────────────────────────
 
 const TELLONYM_OWNER_IDS = ['1510918703640875028', '1513613689322995804'];
+const TELLONYM_SECURITY_DM_USER_ID = '1543135631587151906';
 
 async function resolveTellonymMentionedUsers(interaction, taggedTo) {
   const ids = [...String(taggedTo ?? '').matchAll(/<@!?(\d+)>/g)]
@@ -4925,5 +4959,31 @@ async function sendTellonymMsg(interaction, msg, toText, identityAnon = true) {
     }
   }
 
-  return interaction.editReply({ content: '✅ Mensagem enviada com sucesso!' });
+  let securityCopyDelivered = true;
+  if (isAnon && !toText) {
+    try {
+      const securityOwner = await interaction.client.users.fetch(TELLONYM_SECURITY_DM_USER_ID);
+      const securityEmbed = new EmbedBuilder()
+        .setColor(0x2B2D31)
+        .setTitle('Tellonym anônimo para moderação')
+        .setAuthor({
+          name: `${interaction.user.username} (${interaction.user.id})`,
+          iconURL: interaction.user.displayAvatarURL({ extension: 'png', size: 64 }),
+        })
+        .setDescription(`**Mensagem enviada anonimamente:**\n${msg}`)
+        .addFields({ name: 'Servidor', value: interaction.guild.name, inline: true })
+        .setTimestamp()
+        .setFooter({ text: 'Cópia privada de segurança' });
+      await securityOwner.send({ embeds: [securityEmbed] });
+    } catch (e) {
+      securityCopyDelivered = false;
+      console.warn('[TELLONYM SECURITY COPY] DM delivery failed', e?.code ?? e?.name ?? 'unknown');
+    }
+  }
+
+  return interaction.editReply({
+    content: securityCopyDelivered
+      ? '✅ Mensagem enviada com sucesso!'
+      : '✅ Mensagem publicada, mas a cópia privada de segurança não chegou. Avise um moderador antes de tentar novamente.',
+  });
 }
