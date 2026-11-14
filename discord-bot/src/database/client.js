@@ -4,6 +4,28 @@ const prisma = new PrismaClient({
   log: ['error'],
 });
 
+export async function ensureCallRankSchema() {
+  await prisma.$executeRawUnsafe(`
+    DO $$
+    BEGIN
+      IF EXISTS (
+        SELECT 1
+        FROM information_schema.tables
+        WHERE table_schema = 'public' AND table_name = 'GuildConfig'
+      ) THEN
+        ALTER TABLE "GuildConfig"
+          ADD COLUMN IF NOT EXISTS "callRankChannelId" TEXT,
+          ADD COLUMN IF NOT EXISTS "callRankMessageId" TEXT,
+          ADD COLUMN IF NOT EXISTS "callRankTitle" TEXT,
+          ADD COLUMN IF NOT EXISTS "callRankDescription" TEXT,
+          ADD COLUMN IF NOT EXISTS "callRankFooter" TEXT,
+          ADD COLUMN IF NOT EXISTS "callRankPage" INTEGER NOT NULL DEFAULT 0;
+      END IF;
+    END
+    $$;
+  `);
+}
+
 export async function ensureMarriageSchema() {
   await prisma.$executeRawUnsafe(`
     CREATE TABLE IF NOT EXISTS "BankAccount" (
