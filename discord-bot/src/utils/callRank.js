@@ -60,13 +60,32 @@ export function initializeCallRankVoiceSessions(client) {
   }
 }
 
-async function getRankEntries(guildId) {
+export async function filterCallRankEntriesToCurrentMembers(guild, entries) {
+  const currentMemberIds = new Set();
+
+  for (let start = 0; start < entries.length; start += 100) {
+    const userIds = entries.slice(start, start + 100).map(({ userId }) => userId);
+    try {
+      const members = await guild.members.fetch({ user: userIds, cache: false });
+      for (const userId of members.keys()) currentMemberIds.add(userId);
+    } catch (error) {
+      console.error(
+        `[CALL RANK] Falha ao validar membros do servidor ${guild.id}:`,
+        error.code ?? error.name,
+      );
+    }
+  }
+
+  return entries.filter(({ userId }) => currentMemberIds.has(userId));
+}
+
+async function getRankEntries(guild) {
   const records = await prisma.economy.findMany({
-    where: { guildId, callMinutes: { gt: 0 } },
+    where: { guildId: guild.id, callMinutes: { gt: 0 } },
     select: { userId: true, callMinutes: true },
   });
   const totals = new Map(records.map(({ userId, callMinutes }) => [userId, callMinutes]));
-  const prefix = `${guildId}:`;
+  const prefix = `${guild.id}:`;
   const now = Date.now();
 
   for (const [key, startedAt] of activeCallStarts) {
@@ -76,10 +95,12 @@ async function getRankEntries(guildId) {
     if (liveMinutes > 0) totals.set(userId, (totals.get(userId) ?? 0) + liveMinutes);
   }
 
-  return [...totals.entries()]
+  const entries = [...totals.entries()]
     .filter(([, minutes]) => minutes > 0)
     .map(([userId, minutes]) => ({ userId, minutes }))
     .sort((a, b) => b.minutes - a.minutes || a.userId.localeCompare(b.userId));
+
+  return filterCallRankEntriesToCurrentMembers(guild, entries);
 }
 
 function formatCallTime(totalMinutes) {
@@ -147,7 +168,7 @@ async function loadCallRankConfig(guildId) {
 
 export async function publishCallRankPanel(guild, channel) {
   const config = await loadCallRankConfig(guild.id);
-  const entries = await getRankEntries(guild.id);
+  const entries = await getRankEntries(guild);
   const payload = buildCallRankPayload(guild.id, config, entries, 0);
   let message = null;
 
@@ -181,7 +202,7 @@ export async function refreshCallRankPanel(guild, requestedPage = null) {
     ?? await guild.channels.fetch(config.callRankChannelId).catch(() => null);
   if (!channel?.isTextBased()) return false;
 
-  const entries = await getRankEntries(guild.id);
+  const entries = await getRankEntries(guild);
   const page = requestedPage ?? config.callRankPage ?? 0;
   const payload = buildCallRankPayload(guild.id, config, entries, page);
   let message = await channel.messages.fetch(config.callRankMessageId).catch(() => null);
@@ -216,7 +237,7 @@ export async function handleCallRankPage(interaction) {
     return interaction.reply({ content: 'Este painel não está mais ativo.', ephemeral: true });
   }
 
-  const entries = await getRankEntries(guildId);
+  const entries = await getRankEntries(interaction.guild);
   const payload = buildCallRankPayload(guildId, config, entries, Number.parseInt(rawPage, 10));
   await prisma.guildConfig.update({
     where: { guildId },
