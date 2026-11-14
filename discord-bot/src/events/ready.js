@@ -5,6 +5,7 @@ import prisma from '../database/client.js';
 import { startDeathEventScheduler } from '../utils/deathEvent.js';
 import { startBumpReminderScheduler } from '../utils/bumpReminder.js';
 import { configuredBoostRoleIds, syncBoostRoles } from '../utils/boostRoles.js';
+import { startCallRankScheduler } from '../utils/callRank.js';
 
 // ─── VIP expirado ─────────────────────────────────────────────────────────────
 const VIP_CALL_CATEGORY_ID = '1546637286559588413';
@@ -126,6 +127,7 @@ export default {
     });
     startDeathEventScheduler(client);
     startBumpReminderScheduler(client);
+    startCallRankScheduler(client);
 
     // Registro de comandos e emojis em background (não bloqueia o monitor)
     Promise.all([

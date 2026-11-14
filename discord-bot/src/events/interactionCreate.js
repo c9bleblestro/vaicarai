@@ -132,6 +132,7 @@ import {
 } from '../utils/rolePanelSessions.js';
 import { handleDropClaim, handleDropItemSelect } from '../utils/dropHandlers.js';
 import { handleDeathEventInteraction } from '../utils/deathEvent.js';
+import { handleCallRankCustomization, handleCallRankPage } from '../utils/callRank.js';
 import { awardInteractionXp } from '../utils/reputation.js';
 import { handleSurvivalInteraction } from '../utils/survivalGame.js';
 import {
@@ -621,6 +622,12 @@ export default {
       }
 
       if (interaction.isButton() && await handleDeathEventInteraction(interaction, client)) return;
+      if (interaction.isButton() && interaction.customId.startsWith('callrank_page:')) {
+        return await handleCallRankPage(interaction);
+      }
+      if (interaction.isModalSubmit() && interaction.customId === 'callrank_customize') {
+        return await handleCallRankCustomization(interaction);
+      }
 
       // ── AUTOCOMPLETE ────────────────────────────────────────────────────────
       if (interaction.isAutocomplete()) {

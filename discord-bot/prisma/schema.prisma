@@ -261,6 +261,13 @@ model GuildConfig {
   antiLinkAllowedChannels String?
   antiLinkAllowedRoles    String?
   antiLinkLogChannel      String?
+
+  callRankChannelId  String?
+  callRankMessageId  String?
+  callRankTitle      String?
+  callRankDescription String?
+  callRankFooter     String?
+  callRankPage       Int     @default(0)
 }
 
 model VipPlan {
