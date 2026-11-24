@@ -1,9 +1,10 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import {createCanvas,loadImage,GifEncoder} from '@napi-rs/canvas';
-import {generateProfileCard,loadProfileStatIconSheet,drawProfileStatIcon} from '../src/utils/profileCard.js';
+import {generateProfileCard,loadProfileStatIconSheet,drawProfileStatIcon,computeLevel} from '../src/utils/profileCard.js';
 import {generateAnimatedProfileCard,generateStaticProfileGifCard} from '../src/utils/animatedProfileCard.js';
 import {parseGIF,decompressFrames} from 'gifuct-js';
+import {xpProgress} from '../src/utils/chatLevelMath.js';
 
 const params={username:'Teste',avatarUrl:null,balance:0,bank:0,purchases:0,xp:432,reps:1,marriedToName:'Pessoa A',bestFriendName:'Pessoa B',cardBg1:'#f4d1a6',cardBg2:'#f4d1a6',cardPanelColor:'#1c1e21'};
 
@@ -55,4 +56,13 @@ test('banner GIF continua animado e fallback continua GIF',async()=>{
   assert.ok(frames.length>=2);
   const still=await generateStaticProfileGifCard({...params,_resolvedBanner:resolved});
   assert.match(still.subarray(0,6).toString(),/^GIF8[79]a$/);
+});
+
+test('perfil e /nivel usam a mesma curva de XP, inclusive nível zero e limites',()=>{
+  for(const xp of [0,1,199,200,201,479,480,839,840,1280,10000,1000000]){
+    const expected=xpProgress(xp);
+    assert.deepEqual(computeLevel(xp),{level:expected.level,current:expected.current,needed:expected.required});
+  }
+  assert.deepEqual(computeLevel(0),{level:0,current:0,needed:200});
+  assert.deepEqual(computeLevel(200),{level:1,current:0,needed:280});
 });

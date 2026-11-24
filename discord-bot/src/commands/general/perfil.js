@@ -7,6 +7,7 @@ import {
   AttachmentBuilder,
 } from 'discord.js';
 import prisma from '../../database/client.js';
+import { getMemberLevel } from '../../utils/chatLevel.js';
 import { generateProfileCard }         from '../../utils/profileCard.js';
 import { generateAnimatedProfileCard, generateStaticProfileGifCard } from '../../utils/animatedProfileCard.js';
 import { resolveBanner }               from '../../utils/shopData.js';
@@ -23,13 +24,14 @@ async function getGuildBadgeEmojis(guildId) {
 }
 
 async function fetchProfileData(userId, guildId) {
-  const [eco, profile, purchases, guildBadgeEmojis] = await Promise.all([
+  const [eco, profile, purchases, guildBadgeEmojis, chatLevel] = await Promise.all([
     prisma.economy.findUnique({ where: { userId_guildId: { userId, guildId } } }),
     prisma.userProfile.findUnique({ where: { userId } }),
     prisma.userPurchase.count({ where: { userId } }),
     getGuildBadgeEmojis(guildId),
+    getMemberLevel(guildId, userId),
   ]);
-  return { eco, profile, purchases, guildBadgeEmojis };
+  return { eco, profile, purchases, guildBadgeEmojis, chatLevel };
 }
 
 async function renderProfileAttachment(cardParams) {
@@ -93,7 +95,7 @@ export function profileRefreshRow(userId) {
 
 export async function buildProfilePayload({ userId, guildId, guild, target, includeCustomization = false }) {
   const member = await guild.members.fetch(userId).catch(() => null);
-  const { eco, profile, purchases, guildBadgeEmojis } = await fetchProfileData(userId, guildId);
+  const { eco, profile, purchases, guildBadgeEmojis, chatLevel } = await fetchProfileData(userId, guildId);
 
   let activePetEmoji = null;
   if (profile?.activePet) {
@@ -106,7 +108,7 @@ export async function buildProfilePayload({ userId, guildId, guild, target, incl
     avatarUrl:       target.displayAvatarURL({ extension: 'png', size: 256 }),
     balance:         eco?.balance          ?? 0,
     bank:            eco?.bank             ?? 0,
-    xp:              eco?.xp               ?? 0,
+    xp:              chatLevel.xp, // mesma fonte de /nivel; XP antigo da economia preservado
     activeBanner:    profile?.activeBanner  ?? null,
     activeRing:      profile?.activeRing    ?? null,
     ringBorderColor: profile?.ringBorderColor ?? null,
