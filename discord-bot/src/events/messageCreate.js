@@ -26,6 +26,7 @@ import { answerWithVoice, isVoiceConfigured } from '../utils/voiceAiManager.js';
 import { sendVoiceMessageReply } from '../utils/discordVoiceMessage.js';
 import { clearAfkOnMessage, handleAfkMessage } from '../commands/general/afk.js';
 import { enforceAntiLink } from '../utils/antiLink.js';
+import { processChatLevelMessage } from '../utils/chatLevel.js';
 import { DISBOARD_BOT_ID, handleDisboardBump } from '../utils/bumpReminder.js';
 import { isCommandBlocked, COMMAND_BLOCK_COMMAND } from '../utils/commandBlock.js';
 import {
@@ -438,6 +439,9 @@ export default {
       // A moderação deve acontecer antes de gatilhos e automações para que
       // nenhum handler encerre o fluxo antes de remover um link proibido.
       if (await enforceAntiLink(message, cfg)) return;
+
+      // ── NÍVEIS POR CONVERSA: sem XP em mensagens barradas pelo Anti-Link ──
+      await processChatLevelMessage(message);
 
       // ── REAÇÃO POR MARCAÇÃO ──────────────────────────────────────────────
       if (
