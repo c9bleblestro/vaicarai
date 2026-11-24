@@ -4,6 +4,31 @@ const prisma = new PrismaClient({
   log: ['error'],
 });
 
+/** Cria campos de XP de chat sem reconfigurar ou apagar saldos econômicos. */
+export async function ensureChatLevelSchema() {
+  await prisma.$executeRawUnsafe(`
+    ALTER TABLE IF EXISTS "GuildConfig"
+      ADD COLUMN IF NOT EXISTS "chatLevelEnabled" BOOLEAN NOT NULL DEFAULT FALSE;
+  `);
+  await prisma.$executeRawUnsafe(`
+    CREATE TABLE IF NOT EXISTS "ChatLevelCooldown" (
+      "id" TEXT NOT NULL PRIMARY KEY,
+      "guildId" TEXT NOT NULL,
+      "userId" TEXT NOT NULL,
+      "lastXpAt" TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP,
+      "lastHash" TEXT NOT NULL DEFAULT ''
+    );
+  `);
+  await prisma.$executeRawUnsafe(`
+    CREATE UNIQUE INDEX IF NOT EXISTS "ChatLevelCooldown_guildId_userId_key"
+      ON "ChatLevelCooldown" ("guildId", "userId");
+  `);
+  await prisma.$executeRawUnsafe(`
+    CREATE INDEX IF NOT EXISTS "ChatLevelCooldown_guildId_idx"
+      ON "ChatLevelCooldown" ("guildId");
+  `);
+}
+
 export async function ensureCallRankSchema() {
   await prisma.$executeRawUnsafe(`
     DO $$
