@@ -140,6 +140,7 @@ import {
   handlePainelVoltar,
   handlePainelModuloSel,
   handlePainelCfgBtn,
+  handleChatLevelToggle,
   handleAntiLinkCfgBtn,
   handleAntiLinkCfgModal,
   handleInstaCfgBtn,
@@ -1728,6 +1729,9 @@ export default {
         }
 
         // ── PAINEL CENTRAL: Botões "Configurar" de cada módulo ───────────
+        if (customId === 'chatlevel_toggle') {
+          return handleChatLevelToggle(interaction);
+        }
         if (customId.startsWith('painel_cfg_')) {
           return handlePainelCfgBtn(interaction);
         }
