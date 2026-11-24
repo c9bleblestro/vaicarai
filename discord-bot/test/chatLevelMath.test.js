@@ -5,21 +5,21 @@ import {
   MESSAGE_XP_COOLDOWN_MS,DUPLICATE_MESSAGE_WINDOW_MS,
 } from '../src/utils/chatLevelMath.js';
 
-test('a curva cresce e preserva níveis da economia',()=>{
-  assert.equal(totalXpForLevel(1),0);
-  assert.equal(totalXpForLevel(2),200);
-  assert.equal(totalXpForLevel(3),480);
-  assert.equal(levelFromXp(0),1);
-  assert.equal(levelFromXp(199),1);
-  assert.equal(levelFromXp(200),2);
-  assert.equal(levelFromXp(479),2);
-  assert.equal(levelFromXp(480),3);
-  assert.equal(levelFromXp(840),4);
+test('a curva de chat começa no nível zero e cresce',()=>{
+  assert.equal(totalXpForLevel(0),0);
+  assert.equal(totalXpForLevel(1),200);
+  assert.equal(totalXpForLevel(2),480);
+  assert.equal(levelFromXp(0),0);
+  assert.equal(levelFromXp(199),0);
+  assert.equal(levelFromXp(200),1);
+  assert.equal(levelFromXp(479),1);
+  assert.equal(levelFromXp(480),2);
+  assert.equal(levelFromXp(840),3);
 });
 test('progresso usa XP reais e informa quanto falta',()=>{
-  assert.deepEqual(xpProgress(0),{level:1,current:0,required:200,remaining:200,percent:0});
+  assert.deepEqual(xpProgress(0),{level:0,current:0,required:200,remaining:200,percent:0});
   const p=xpProgress(211);
-  assert.equal(p.level,2);
+  assert.equal(p.level,1);
   assert.equal(p.current,11);
   assert.equal(p.required,280);
   assert.equal(p.remaining,269);
@@ -36,7 +36,7 @@ test('XP apenas por mensagens de conversa, não por comandos ou spam trivial',()
   assert.equal(DUPLICATE_MESSAGE_WINDOW_MS,300000);
 });
 test('a progressão aguenta XP alto sem arredondar níveis para valores falsos',()=>{
-  for(const xp of [1,199,200,201,700,840,10000,1000000]){
+  for(const xp of [0,1,199,200,201,700,840,10000,1000000]){
     const lvl=levelFromXp(xp);
     assert.ok(xp>=totalXpForLevel(lvl));
     assert.ok(xp<totalXpForLevel(lvl+1));

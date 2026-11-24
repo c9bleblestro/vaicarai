@@ -63,7 +63,7 @@ function ring(ctx,x,y,r,color,width,blur=0){
   ctx.beginPath();ctx.arc(x,y,r,0,Math.PI*2);ctx.stroke();ctx.restore();
 }
 export function drawChatLevelCard(ctx,{displayName,username,avatar,fromLevel,toLevel,totalXp,mode='levelup'}){
-  const level=toLevel??1,prog=xpProgress(totalXp??0);
+  const prog=xpProgress(totalXp??0),level=toLevel??prog.level;
   ctx.clearRect(0,0,W,H);
   ctx.save();
   rounded(ctx,2,2,W-4,H-4,45);ctx.clip();

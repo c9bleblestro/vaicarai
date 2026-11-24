@@ -4,7 +4,7 @@
 
 Quando o administrador ativa o módulo no `/painel` → `Abrir Funções` → `Níveis por chat`, mensagens normais dos membros do servidor concedem **12–20 XP** após um cooldown persistente de **45 segundos**. Mensagens copiadas iguais, links soltos, comandos e textos quase vazios não concedem XP. Bots e webhooks não participam.
 
-Os valores são guardados em `Economy.xp` e `Economy.level`, os campos já existentes no bot. Saldo, carteira, compras e outras estatísticas da economia não são modificados. A tabela `ChatLevelCooldown` guarda o controle anti-farm no banco PostgreSQL. Configuração separada por servidor, desligada inicialmente.
+O XP exclusivo do chat é guardado em `ChatLevelCooldown.chatXp` no PostgreSQL, separado da economia. A mesma tabela guarda o controle anti-farm. Todos começam no nível 0 com 0 XP; dados antigos de economia não são importados nem modificados. Configuração separada por servidor, desligada inicialmente.
 
 Quando o XP total atingir um novo nível, o bot anuncia a subida uma única vez com uma imagem rosa e preta renderizada em PNG, com foto do Discord, nome real, níveis anterior/atual e barra do próximo nível. A imagem tem 1600×430 pixels e não contém botões falsos.
 
@@ -15,7 +15,7 @@ Quando o XP total atingir um novo nível, o bot anuncia a subida uma única vez 
 
 ### Escala de XP
 
-Do nível 1 para 2: 200 XP. Do nível 2 para 3: 280 XP adicionais. Depois o requisito cresce gradativamente. O XP ganho anteriormente por interações com o bot continua preservado.
+Do nível 0 para 1: 200 XP. Do nível 1 para 2: 280 XP adicionais. Depois o requisito cresce gradativamente. O XP antigo da economia continua preservado, mas não conta neste sistema.
 
 ### Deploy Railway
 

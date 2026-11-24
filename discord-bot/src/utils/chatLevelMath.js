@@ -1,15 +1,15 @@
-/** XP de conversa integrado ao saldo de XP (não às moedas) da economia. */
+/** XP de conversa independente da economia, iniciando no nível zero. */
 export const MESSAGE_XP_COOLDOWN_MS = 45_000;
 export const DUPLICATE_MESSAGE_WINDOW_MS = 300_000;
 export const CHAT_XP_MIN = 12;
 export const CHAT_XP_MAX = 20;
 export function totalXpForLevel(level) {
-  const n=Math.max(0,Math.trunc(level)-1);
+  const n=Math.max(0,Math.trunc(level));
   return 40*n*n+160*n;
 }
 export function levelFromXp(xp) {
   const points=Math.max(0,Math.floor(Number(xp)||0));
-  return 1+Math.max(0,Math.floor((Math.sqrt(25_600+160*points)-160)/80));
+  return Math.max(0,Math.floor((Math.sqrt(25_600+160*points)-160)/80));
 }
 export function xpProgress(xp) {
   const level=levelFromXp(xp);

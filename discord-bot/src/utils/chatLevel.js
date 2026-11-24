@@ -22,14 +22,15 @@ async function enabledOnGuild(guildId){
  * SQL parametrizado: os IDs, horários e hashes não são concatenados à query.
  */
 const COOLDOWN_SQL=[
-  'INSERT INTO "ChatLevelCooldown" ("id","guildId","userId","lastXpAt","lastHash")',
-  'VALUES ($1,$2,$3,$4,$5)',
+  'INSERT INTO "ChatLevelCooldown" ("id","guildId","userId","lastXpAt","lastHash","chatXp")',
+  'VALUES ($1,$2,$3,$4,$5,$6)',
   'ON CONFLICT ("guildId","userId") DO UPDATE SET',
-  '"lastXpAt"=EXCLUDED."lastXpAt","lastHash"=EXCLUDED."lastHash"',
-  'WHERE (EXCLUDED."lastXpAt" - "ChatLevelCooldown"."lastXpAt") >= INTERVAL \'45 seconds\'',
+  '"lastXpAt"=EXCLUDED."lastXpAt","lastHash"=EXCLUDED."lastHash",',
+  '"chatXp"="ChatLevelCooldown"."chatXp"+EXCLUDED."chatXp"',
+  'WHERE "ChatLevelCooldown"."chatXp"=0 OR ((EXCLUDED."lastXpAt" - "ChatLevelCooldown"."lastXpAt") >= INTERVAL \'45 seconds\'',
   'AND ("ChatLevelCooldown"."lastHash" IS DISTINCT FROM EXCLUDED."lastHash"',
-  'OR (EXCLUDED."lastXpAt" - "ChatLevelCooldown"."lastXpAt") >= INTERVAL \'5 minutes\')',
-  'RETURNING "userId"',
+  'OR (EXCLUDED."lastXpAt" - "ChatLevelCooldown"."lastXpAt") >= INTERVAL \'5 minutes\'))',
+  'RETURNING "chatXp"',
 ].join(' ');
 
 export async function awardChatMessageXp(message){
@@ -41,26 +42,14 @@ export async function awardChatMessageXp(message){
   const hash=createHash('sha256').update(normalized).digest('hex').slice(0,32);
   const gain=randomInt(CHAT_XP_MIN,CHAT_XP_MAX+1);
   const accepted=await prisma.$queryRawUnsafe(
-    COOLDOWN_SQL,randomUUID(),guildId,userId,now,hash,
+    COOLDOWN_SQL,randomUUID(),guildId,userId,now,hash,gain,
   );
   if(!accepted.length)return null;
-  // XP e nível da economia existentes; coins, banco e compras não são tocados.
-  const eco=await prisma.economy.upsert({
-    where:{userId_guildId:{userId,guildId}},
-    create:{userId,guildId,xp:gain,level:levelFromXp(gain)},
-    update:{xp:{increment:gain}},
-  });
-  const reached=levelFromXp(eco.xp);
-  const previous=eco.level;
-  let leveled=false;
-  if(reached>eco.level){
-    const updated=await prisma.economy.updateMany({
-      where:{userId,guildId,level:{lt:reached}},
-      data:{level:reached},
-    });
-    leveled=updated.count>0;
-  }
-  return {gain,level:reached,previous,leveled,xp:eco.xp};
+  // Incremento atômico do XP exclusivo do chat; economia permanece intacta.
+  const xp=accepted[0].chatXp;
+  const previous=levelFromXp(xp-gain);
+  const reached=levelFromXp(xp);
+  return {gain,level:reached,previous,leveled:reached>previous,xp};
 }
 export async function processChatLevelMessage(message){
   let result=null;
@@ -92,9 +81,9 @@ export async function processChatLevelMessage(message){
   return result;
 }
 export async function getMemberLevel(guildId,userId){
-  const record=await prisma.economy.findUnique({
-    where:{userId_guildId:{userId,guildId}},select:{xp:true,level:true},
+  const record=await prisma.chatLevelCooldown.findUnique({
+    where:{guildId_userId:{guildId,userId}},select:{chatXp:true},
   });
-  const xp=record?.xp??0;
+  const xp=record?.chatXp??0;
   return {xp,...xpProgress(xp)};
 }

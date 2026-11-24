@@ -16,8 +16,12 @@ export async function ensureChatLevelSchema() {
       "guildId" TEXT NOT NULL,
       "userId" TEXT NOT NULL,
       "lastXpAt" TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP,
-      "lastHash" TEXT NOT NULL DEFAULT ''
+      "lastHash" TEXT NOT NULL DEFAULT '',
+      "chatXp" INTEGER NOT NULL DEFAULT 0
     );
+  `);
+  await prisma.$executeRawUnsafe(`
+    ALTER TABLE "ChatLevelCooldown" ADD COLUMN IF NOT EXISTS "chatXp" INTEGER NOT NULL DEFAULT 0;
   `);
   await prisma.$executeRawUnsafe(`
     CREATE UNIQUE INDEX IF NOT EXISTS "ChatLevelCooldown_guildId_userId_key"
