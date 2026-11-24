@@ -3,6 +3,7 @@ import { fileURLToPath } from 'url';
 import { dirname, join } from 'path';
 import { readFileSync } from 'fs';
 import { resolveBanner, getRingColors, drawAvatarRing } from './shopData.js';
+import { xpProgress } from './chatLevelMath.js';
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname  = dirname(__filename);
@@ -44,18 +45,9 @@ export function computeEarnedBadgeKeys({ balance, bank, purchases, activePet, ac
 }
 
 export function computeLevel(xp) {
-  // A cada nível a meta cresce um pouco; isso mantém a progressão visível
-  // sem deixar que usuários ativos subam dezenas de níveis em poucos dias.
-  const totalXp = Math.max(0, Number(xp) || 0);
-  let level = 1;
-  let spent = 0;
-  let needed = 300;
-  while (totalXp >= spent + needed) {
-    spent += needed;
-    level += 1;
-    needed = 300 + (level - 1) * 100;
-  }
-  return { level, current: totalXp - spent, needed };
+  // Mesma curva de /nivel e dos avisos de subida, sem progressão paralela.
+  const { level, current, required } = xpProgress(xp);
+  return { level, current, needed: required };
 }
 
 // ─── Helpers ──────────────────────────────────────────────────────────────────

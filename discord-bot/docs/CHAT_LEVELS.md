@@ -11,7 +11,8 @@ Quando o XP total atingir um novo nível, o bot anuncia a subida uma única vez 
 ### Comandos
 
 - `/painel` → `Abrir Funções` → `Níveis por chat` → `Ativar níveis` ou `Desativar níveis` (somente Gerenciar Servidor)
-- `/nivel` (opcionalmente selecionando um membro) mostra o nível e o XP atual sem simular uma subida.
+- `/nivel` (opcionalmente selecionando um membro) mostra o nível e o XP atual sem simular uma subida. Os prefixos `s nivel` e `savage nivel` consultam os mesmos dados.
+- `/perfil` e seus prefixos e botão Atualizar mostram o mesmo nível e XP de conversa; o XP anterior da economia permanece no banco e não é usado para esses cards.
 
 ### Escala de XP
 
