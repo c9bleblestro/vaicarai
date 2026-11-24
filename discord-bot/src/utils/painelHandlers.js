@@ -236,7 +236,7 @@ export function buildChatLevelConfigPayload(cfg){
       'Mensagens repetidas, bots e comandos não geram XP.',
       'Ao subir de nível, o bot publica a arte rosa no canal da conversa.',
       'O XP e os níveis são guardados na economia do servidor.',
-    ].join('\n'))
+    ].join('\n')))
     .addActionRowComponents(new ActionRowBuilder().addComponents(
       new ButtonBuilder().setCustomId('chatlevel_toggle')
         .setLabel(enabled?'Desativar níveis':'Ativar níveis')
