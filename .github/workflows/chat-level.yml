@@ -32,5 +32,6 @@ jobs:
           node --check src/utils/chatLevelCard.js
           node --check src/utils/painelHandlers.js
           node --check src/commands/general/nivel.js
+          node --check src/utils/profileCard.js
       - name: Test XP rules and PNG rendering
-        run: node --test test/chatLevelMath.test.js test/chatLevelCard.test.js
+        run: node --test test/chatLevelMath.test.js test/chatLevelCard.test.js test/profileStatIcons.test.js
