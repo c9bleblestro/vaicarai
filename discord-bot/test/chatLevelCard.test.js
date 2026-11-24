@@ -6,7 +6,7 @@ test('a arte rosa é um PNG real e usa dados do perfil, sem avatar externo',asyn
   const buffer=await createChatLevelImage({
     displayName:'Pessoa no Servidor',
     username:'usuario_exemplo',
-    fromLevel:1,toLevel:2,totalXp:211,
+    fromLevel:0,toLevel:1,totalXp:211,
     avatarUrl:null,
   });
   assert.ok(Buffer.isBuffer(buffer));
@@ -19,7 +19,7 @@ test('a arte pode mostrar progresso normal sem fingir subida',async()=>{
   const buf=await createChatLevelImage({
     displayName:'Pessoa',
     username:'user',
-    mode:'progress',fromLevel:2,toLevel:2,totalXp:211,
+    mode:'progress',fromLevel:0,toLevel:0,totalXp:0,
   });
   assert.equal(buf.subarray(0,8).toString('hex'),'89504e470d0a1a0a');
 });
