@@ -23,6 +23,7 @@ import { buildPartnerConfigPayload } from './partnershipPanels.js';
 import { buildLojaAdminPayload } from './shopHandlers.js';
 import { buildVipConfigPayload } from '../commands/loja/vip.js';
 import { buildTriggerConfigPayload } from './messageTriggers.js';
+import { invalidateChatLevelConfig } from './chatLevel.js';
 import {
   canManageBoostRoles,
   syncBoostRoles,
@@ -211,7 +212,49 @@ export function buildPainelFuncoes(guild, cfg) {
     moduleBtn('painel_cfg_reacao_marcacao', 'Reação por marcação'),
   ));
 
+  // Níveis aparecem dentro do /painel atual, sem novos menus externos.
+  c.addTextDisplayComponents(new TextDisplayBuilder().setContent([
+    '**Comunidade & Níveis**',
+    D(cfg.chatLevelEnabled)+' **Níveis por conversa** · '+(cfg.chatLevelEnabled?'Ativado':'Desativado'),
+    'Membros ganham XP conversando e recebem a arte rosa ao subir de nível.',
+  ].join('\n')));
+  c.addActionRowComponents(new ActionRowBuilder().addComponents(
+    moduleBtn('painel_cfg_niveis','Níveis por chat'),
+  ));
+
   return { components: [c, voltarRow()], flags: MessageFlags.IsComponentsV2 };
+}
+
+/** Painel separado para configuração, na mesma mensagem da interface /painel. */
+export function buildChatLevelConfigPayload(cfg){
+  const enabled=cfg.chatLevelEnabled===true;
+  const c=new ContainerBuilder()
+    .addTextDisplayComponents(new TextDisplayBuilder().setContent([
+      '## 💗 Sistema de níveis',
+      'Status: **'+(enabled?'🟢 ATIVADO':'🔴 DESATIVADO')+'**',
+      'Cada mensagem válida rende **12 a 20 XP** com intervalo de **45 segundos**.',
+      'Mensagens repetidas, bots e comandos não geram XP.',
+      'Ao subir de nível, o bot publica a arte rosa no canal da conversa.',
+      'O XP e os níveis são guardados na economia do servidor.',
+    ].join('\n')))
+    .addActionRowComponents(new ActionRowBuilder().addComponents(
+      new ButtonBuilder().setCustomId('chatlevel_toggle')
+        .setLabel(enabled?'Desativar níveis':'Ativar níveis')
+        .setStyle(enabled?ButtonStyle.Danger:ButtonStyle.Success),
+    ));
+  return {components:[c,voltarRow()],flags:MessageFlags.IsComponentsV2};
+}
+export async function handleChatLevelToggle(interaction){
+  if(!interaction.guildId||!interaction.memberPermissions?.has(0x20n)){
+    return interaction.reply({content:'❌ Somente quem tem Gerenciar Servidor pode alterar os níveis.',ephemeral:true});
+  }
+  const current=await getCfg(interaction.guildId);
+  const updated=await prisma.guildConfig.update({
+    where:{guildId:interaction.guildId},
+    data:{chatLevelEnabled:!current.chatLevelEnabled},
+  });
+  invalidateChatLevelConfig(interaction.guildId);
+  return interaction.update(buildChatLevelConfigPayload(updated));
 }
 
 const MENTION_REACTION_EMOJIS_PER_PAGE = 25;
@@ -966,6 +1009,10 @@ export async function handlePainelCfgBtn(interaction) {
   let payload;
 
   switch (modulo) {
+    case 'niveis': {
+      payload = buildChatLevelConfigPayload(cfg);
+      break;
+    }
     case 'boasvindas': {
       const base = buildWelcomeConfigPayload(cfg);
       payload = { ...base, components: [...(base.components ?? []), voltarRow()] };

@@ -118,6 +118,7 @@ model MemberWarning {
 model GuildConfig {
   id      String @id @default(cuid())
   guildId String @unique
+  chatLevelEnabled Boolean @default(false)
 
   mentionReactionEnabled       Boolean @default(false)
   mentionReactionTargetUserId  String?
@@ -777,4 +778,18 @@ model UserQuestToken {
   userId    String   @unique
   token     String
   updatedAt DateTime @updatedAt
+}
+
+
+// Cooldown persistente e proteção contra mensagens repetidas.
+// O XP/nível real permanece em Economy, mantendo o perfil e a economia atuais.
+model ChatLevelCooldown {
+  id String @id @default(cuid())
+  guildId String
+  userId String
+  lastXpAt DateTime @default(now())
+  lastHash String @default("")
+
+  @@unique([guildId, userId])
+  @@index([guildId])
 }
