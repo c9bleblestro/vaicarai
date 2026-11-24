@@ -1,0 +1,36 @@
+name: Chat Level - Quality Checks
+on:
+  push:
+    branches: [feat/chat-level-pink-panel]
+  pull_request:
+    paths:
+      - 'discord-bot/**'
+      - '.github/workflows/chat-level.yml'
+jobs:
+  validate:
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: discord-bot
+    env:
+      DATABASE_URL: postgresql://tester:tester@localhost:5432/testdb
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+      - name: Install dependencies
+        run: npm install --no-audit --no-fund
+      - name: Validate Prisma and generate client
+        run: npx prisma validate && npx prisma generate
+      - name: Check syntax
+        run: |
+          node --check src/index.js
+          node --check src/events/messageCreate.js
+          node --check src/events/interactionCreate.js
+          node --check src/utils/chatLevel.js
+          node --check src/utils/chatLevelCard.js
+          node --check src/utils/painelHandlers.js
+          node --check src/commands/general/nivel.js
+      - name: Test XP rules and PNG rendering
+        run: node --test test/chatLevelMath.test.js test/chatLevelCard.test.js
