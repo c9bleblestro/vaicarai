@@ -412,6 +412,35 @@ const STAT_ICON_CONFIGS = [
   { emoji: '🌟', c1: '#2786ef', c2: '#0c3caa', fallback: fallbackBlueStar }, // Amigo
 ];
 
+// Recurso local com os seis ícones aprovados, na ordem das estatísticas.
+const STAT_ICON_TILE = 56;
+let statIconSheetPromise;
+export function loadProfileStatIconSheet() {
+  if (!statIconSheetPromise) {
+    statIconSheetPromise = Promise.resolve()
+      .then(() => loadImage(readFileSync(join(__dirname, '../assets/profile-stat-icons.webp'))))
+      .then(img => img.width === STAT_ICON_TILE * 6 && img.height === STAT_ICON_TILE ? img : null)
+      .catch(() => null);
+  }
+  return statIconSheetPromise;
+}
+
+export function drawProfileStatIcon(ctx, sheet, index, x, y, size) {
+  if (!sheet) return false;
+  ctx.save();
+  try {
+    ctx.beginPath();
+    ctx.arc(x + size / 2, y + size / 2, size / 2 - 1, 0, Math.PI * 2);
+    ctx.clip();
+    ctx.drawImage(sheet, index * STAT_ICON_TILE, 0, STAT_ICON_TILE, STAT_ICON_TILE, x, y, size, size);
+    return true;
+  } catch {
+    return false;
+  } finally {
+    ctx.restore();
+  }
+}
+
 // ─── Gerador principal ────────────────────────────────────────────────────────
 
 export async function generateProfileCard({
@@ -439,7 +468,8 @@ export async function generateProfileCard({
 
   const darkCard = isColorDark(cardBg1 ?? DEFAULT_CARD_BG_1);
   const darkPanel = isColorDark(cardPanelColor ?? DEFAULT_PANEL_COLOR);
-  const statIconImgs = await Promise.all(
+  const statIconSheet = await loadProfileStatIconSheet();
+  const statIconImgs = statIconSheet ? [] : await Promise.all(
     STAT_ICON_CONFIGS.map(ic => loadEmojiImg(ic.emoji).catch(() => null)),
   );
   const badgeIconImgs = await Promise.all(
@@ -712,17 +742,19 @@ export async function generateProfileCard({
 
     const icCfg = STAT_ICON_CONFIGS[i];
     const iX = cX + 10, iY = cY + 7;
-    drawIconBg(ctx, iX, iY, ISZ, icCfg.c1, icCfg.c2);
-    const emojiImg = statIconImgs[i];
-    if (emojiImg) {
-      ctx.save();
-      ctx.beginPath();
-      ctx.arc(iX + ISZ / 2, iY + ISZ / 2, ISZ / 2 - 3, 0, Math.PI * 2);
-      ctx.clip();
-      ctx.drawImage(emojiImg, iX + 7, iY + 7, ISZ - 14, ISZ - 14);
-      ctx.restore();
-    } else {
-      ctx.save(); icCfg.fallback(ctx, iX, iY, ISZ); ctx.restore();
+    if (!drawProfileStatIcon(ctx, statIconSheet, i, iX, iY, ISZ)) {
+      drawIconBg(ctx, iX, iY, ISZ, icCfg.c1, icCfg.c2);
+      const emojiImg = statIconImgs[i];
+      if (emojiImg) {
+        ctx.save();
+        ctx.beginPath();
+        ctx.arc(iX + ISZ / 2, iY + ISZ / 2, ISZ / 2 - 3, 0, Math.PI * 2);
+        ctx.clip();
+        ctx.drawImage(emojiImg, iX + 7, iY + 7, ISZ - 14, ISZ - 14);
+        ctx.restore();
+      } else {
+        ctx.save(); icCfg.fallback(ctx, iX, iY, ISZ); ctx.restore();
+      }
     }
 
     const maxW = PILL_W - ISZ - 28;
