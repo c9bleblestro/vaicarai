@@ -22,7 +22,7 @@ export function eligibleChatText(text) {
   const raw=String(text??'').trim();
   if(raw.length<8 || raw.length>4000)return false;
   if(/^(?:\/|!|\.gf\b|safk\b|savage\s|s\s)/i.test(raw))return false;
-  if(!/[\p{L}\p{N}]/u.test(raw))return false;
+  if(!/\p{L}/u.test(raw))return false; // códigos numéricos não são conversa
   if(/^(?:https?:\/\/|www\.)\S+$/i.test(raw))return false;
   const letters=raw.replace(/[^\p{L}\p{N}]/gu,'').toLowerCase();
   if(letters.length<6)return false;
