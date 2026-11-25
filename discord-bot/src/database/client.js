@@ -17,11 +17,29 @@ export async function ensureChatLevelSchema() {
       "userId" TEXT NOT NULL,
       "lastXpAt" TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP,
       "lastHash" TEXT NOT NULL DEFAULT '',
-      "chatXp" INTEGER NOT NULL DEFAULT 0
+      "chatXp" INTEGER NOT NULL DEFAULT 0,
+      "chatMessages" INTEGER
     );
   `);
   await prisma.$executeRawUnsafe(`
     ALTER TABLE "ChatLevelCooldown" ADD COLUMN IF NOT EXISTS "chatXp" INTEGER NOT NULL DEFAULT 0;
+  `);
+  await prisma.$executeRawUnsafe(`
+    ALTER TABLE "ChatLevelCooldown" ADD COLUMN IF NOT EXISTS "chatMessages" INTEGER;
+  `);
+  // Migração única: mantém nível e fração de progresso antigos; não altera chatXp.
+  // NULL identifica registros anteriores à mudança; zero é um progresso válido.
+  await prisma.$executeRawUnsafe(`
+    WITH legacy AS (
+      SELECT "id", GREATEST("chatXp",0)::numeric AS xp,
+        GREATEST(0,FLOOR((SQRT(25600::numeric+160::numeric*GREATEST("chatXp",0))-160)/80)) AS lvl
+      FROM "ChatLevelCooldown" WHERE "chatMessages" IS NULL
+    )
+    UPDATE "ChatLevelCooldown" AS c
+    SET "chatMessages" = (legacy.lvl*50 + LEAST(49,GREATEST(0,FLOOR(
+      (legacy.xp-40*legacy.lvl*legacy.lvl-160*legacy.lvl)*50/(200+80*legacy.lvl)
+    ))))::integer
+    FROM legacy WHERE c."id"=legacy."id" AND c."chatMessages" IS NULL;
   `);
   await prisma.$executeRawUnsafe(`
     CREATE UNIQUE INDEX IF NOT EXISTS "ChatLevelCooldown_guildId_userId_key"

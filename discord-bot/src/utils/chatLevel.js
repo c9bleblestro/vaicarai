@@ -1,9 +1,9 @@
-import {createHash,randomInt,randomUUID} from 'node:crypto';
+import {createHash,randomUUID} from 'node:crypto';
 import {AttachmentBuilder} from 'discord.js';
 import prisma from '../database/client.js';
 import {createChatLevelImage} from './chatLevelCard.js';
 import {
-  CHAT_XP_MIN,CHAT_XP_MAX,eligibleChatText,levelFromXp,xpProgress,
+  eligibleChatText,levelFromXp,xpProgress,
 } from './chatLevelMath.js';
 
 const configCache=new Map();
@@ -22,15 +22,16 @@ async function enabledOnGuild(guildId){
  * SQL parametrizado: os IDs, horários e hashes não são concatenados à query.
  */
 const COOLDOWN_SQL=[
-  'INSERT INTO "ChatLevelCooldown" ("id","guildId","userId","lastXpAt","lastHash","chatXp")',
-  'VALUES ($1,$2,$3,$4,$5,$6)',
+  'INSERT INTO "ChatLevelCooldown" ("id","guildId","userId","lastXpAt","lastHash","chatMessages")',
+  'VALUES ($1,$2,$3,$4,$5,1)',
   'ON CONFLICT ("guildId","userId") DO UPDATE SET',
-  '"lastXpAt"=EXCLUDED."lastXpAt","lastHash"=EXCLUDED."lastHash",',
-  '"chatXp"="ChatLevelCooldown"."chatXp"+EXCLUDED."chatXp"',
-  'WHERE "ChatLevelCooldown"."chatXp"=0 OR ((EXCLUDED."lastXpAt" - "ChatLevelCooldown"."lastXpAt") >= INTERVAL \'45 seconds\'',
-  'AND ("ChatLevelCooldown"."lastHash" IS DISTINCT FROM EXCLUDED."lastHash"',
-  'OR (EXCLUDED."lastXpAt" - "ChatLevelCooldown"."lastXpAt") >= INTERVAL \'5 minutes\'))',
-  'RETURNING "chatXp"',
+  '"lastXpAt"=GREATEST("ChatLevelCooldown"."lastXpAt",EXCLUDED."lastXpAt"),',
+  '"lastHash"=EXCLUDED."lastHash",',
+  '"chatMessages"=COALESCE("ChatLevelCooldown"."chatMessages",0)+1',
+  'WHERE "ChatLevelCooldown"."chatMessages"=0',
+  'OR "ChatLevelCooldown"."lastHash" IS DISTINCT FROM EXCLUDED."lastHash"',
+  'OR (EXCLUDED."lastXpAt" - "ChatLevelCooldown"."lastXpAt") >= INTERVAL \'5 minutes\'',
+  'RETURNING "chatMessages"',
 ].join(' ');
 
 export async function awardChatMessageXp(message){
@@ -40,13 +41,13 @@ export async function awardChatMessageXp(message){
   const guildId=message.guildId,userId=message.author.id,now=new Date();
   const normalized=message.content.normalize('NFKC').trim().replace(/\s+/g,' ').toLocaleLowerCase('pt-BR');
   const hash=createHash('sha256').update(normalized).digest('hex').slice(0,32);
-  const gain=randomInt(CHAT_XP_MIN,CHAT_XP_MAX+1);
+  const gain=1;
   const accepted=await prisma.$queryRawUnsafe(
-    COOLDOWN_SQL,randomUUID(),guildId,userId,now,hash,gain,
+    COOLDOWN_SQL,randomUUID(),guildId,userId,now,hash,
   );
   if(!accepted.length)return null;
   // Incremento atômico do XP exclusivo do chat; economia permanece intacta.
-  const xp=accepted[0].chatXp;
+  const xp=accepted[0].chatMessages;
   const previous=levelFromXp(xp-gain);
   const reached=levelFromXp(xp);
   return {gain,level:reached,previous,leveled:reached>previous,xp};
@@ -82,8 +83,8 @@ export async function processChatLevelMessage(message){
 }
 export async function getMemberLevel(guildId,userId){
   const record=await prisma.chatLevelCooldown.findUnique({
-    where:{guildId_userId:{guildId,userId}},select:{chatXp:true},
+    where:{guildId_userId:{guildId,userId}},select:{chatMessages:true},
   });
-  const xp=record?.chatXp??0;
+  const xp=record?.chatMessages??0;
   return {xp,...xpProgress(xp)};
 }

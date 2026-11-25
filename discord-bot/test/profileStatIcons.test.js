@@ -59,10 +59,10 @@ test('banner GIF continua animado e fallback continua GIF',async()=>{
 });
 
 test('perfil e /nivel usam a mesma curva de XP, inclusive nível zero e limites',()=>{
-  for(const xp of [0,1,199,200,201,479,480,839,840,1280,10000,1000000]){
+  for(const xp of [0,1,49,50,51,99,100,149,150,199,200,10000,1000000]){
     const expected=xpProgress(xp);
     assert.deepEqual(computeLevel(xp),{level:expected.level,current:expected.current,needed:expected.required});
   }
-  assert.deepEqual(computeLevel(0),{level:0,current:0,needed:200});
-  assert.deepEqual(computeLevel(200),{level:1,current:0,needed:280});
+  assert.deepEqual(computeLevel(0),{level:0,current:0,needed:50});
+  assert.deepEqual(computeLevel(50),{level:1,current:0,needed:50});
 });

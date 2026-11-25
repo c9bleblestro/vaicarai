@@ -1,7 +1,7 @@
 name: Chat Level - Quality Checks
 on:
   push:
-    branches: [feat/chat-level-pink-panel]
+    branches: [main, feat/chat-level-pink-panel]
   pull_request:
     paths:
       - 'discord-bot/**'
@@ -9,6 +9,19 @@ on:
 jobs:
   validate:
     runs-on: ubuntu-latest
+    services:
+      postgres:
+        image: postgres:16
+        env:
+          POSTGRES_USER: tester
+          POSTGRES_PASSWORD: tester
+          POSTGRES_DB: testdb
+        ports: ['5432:5432']
+        options: >-
+          --health-cmd pg_isready
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 10
     defaults:
       run:
         working-directory: discord-bot
@@ -34,5 +47,7 @@ jobs:
           node --check src/commands/general/nivel.js
           node --check src/utils/profileCard.js
           node --check src/commands/general/perfil.js
+      - name: Prepare isolated test database
+        run: npx prisma db push --skip-generate
       - name: Test XP rules and PNG rendering
-        run: node --test test/chatLevelMath.test.js test/chatLevelCard.test.js test/profileStatIcons.test.js
+        run: node --test test/chatLevelMath.test.js test/chatLevelCard.test.js test/profileStatIcons.test.js test/chatLevelIntegration.test.js
