@@ -790,6 +790,7 @@ model ChatLevelCooldown {
   lastXpAt DateTime @default(now())
   lastHash String @default("")
   chatXp Int @default(0)
+  chatMessages Int?
 
   @@unique([guildId, userId])
   @@index([guildId])

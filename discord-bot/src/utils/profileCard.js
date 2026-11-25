@@ -440,7 +440,7 @@ export async function generateProfileCard({
   activeRing, ringBorderColor = null, activePet, guildBadgeEmojis = {}, guildId = null,
   marriedToName = null, bestFriendName = null, bio = null,
   cardBg1 = null, cardBg2 = null, cardPanelColor = null,
-  xp = 0, reps = 0,
+  xp = 0, reps = 0, chatLevel = null,
   // Parâmetros internos para geração de GIF animado:
   _bannerImage = null,   // Image já carregada — pula o loadUrl do banner
   _resolvedBanner = null, // Banner já resolvido — evita nova consulta/download
@@ -453,7 +453,9 @@ export async function generateProfileCard({
     _resolvedBanner ?? await resolveBanner(activeBanner, guildId, { includeImageData: true })
   );
   const { c1: rc1, c2: rc2 } = getRingColors(activeRing ?? null);
-  const { level, current: xpCurrent, needed: xpNeeded } = computeLevel(xp);
+  const { level, current: xpCurrent, needed: xpNeeded } = chatLevel
+    ? { level: chatLevel.level, current: chatLevel.current, needed: chatLevel.required }
+    : computeLevel(xp);
   const earnedKeys = computeEarnedBadgeKeys({
     balance, bank, purchases, activePet, activeBanner, activeRing,
   });

@@ -2,9 +2,9 @@
 
 ## Como funciona
 
-Quando o administrador ativa o módulo no `/painel` → `Abrir Funções` → `Níveis por chat`, mensagens normais dos membros do servidor concedem **12–20 XP** após um cooldown persistente de **45 segundos**. Mensagens copiadas iguais, links soltos, comandos e textos quase vazios não concedem XP. Bots e webhooks não participam.
+Quando o administrador ativa o módulo no `/painel` → `Abrir Funções` → `Níveis por chat`, mensagens normais dos membros do servidor concedem **1 XP por mensagem válida**, sem cooldown entre mensagens diferentes. Mensagens copiadas iguais, links soltos, comandos e textos quase vazios não concedem XP. Bots e webhooks não participam.
 
-O XP exclusivo do chat é guardado em `ChatLevelCooldown.chatXp` no PostgreSQL, separado da economia. A mesma tabela guarda o controle anti-farm. Todos começam no nível 0 com 0 XP; dados antigos de economia não são importados nem modificados. Configuração separada por servidor, desligada inicialmente.
+O contador exclusivo do chat é guardado em `ChatLevelCooldown.chatMessages` no PostgreSQL, separado da economia. A mesma tabela guarda o controle anti-farm. Novos membros começam no nível 0 com 0 XP. O XP de conversa anterior é convertido uma única vez, preservando o nível e a fração de progresso (arredondada para baixo); os dados antigos ficam intactos. Configuração separada por servidor, desligada inicialmente.
 
 Quando o XP total atingir um novo nível, o bot anuncia a subida uma única vez com uma imagem rosa e preta renderizada em PNG, com foto do Discord, nome real, níveis anterior/atual e barra do próximo nível. A imagem tem 1600×430 pixels e não contém botões falsos.
 
@@ -16,7 +16,7 @@ Quando o XP total atingir um novo nível, o bot anuncia a subida uma única vez 
 
 ### Escala de XP
 
-Do nível 0 para 1: 200 XP. Do nível 1 para 2: 280 XP adicionais. Depois o requisito cresce gradativamente. O XP antigo da economia continua preservado, mas não conta neste sistema.
+Cada 50 mensagens válidas (50 XP) concedem exatamente um nível. Mensagens diferentes não têm cooldown; repetições consecutivas idênticas são bloqueadas por 5 minutos. O XP antigo da economia continua preservado, mas não conta neste sistema.
 
 ### Deploy Railway
 

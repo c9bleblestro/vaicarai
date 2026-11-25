@@ -108,7 +108,8 @@ export async function buildProfilePayload({ userId, guildId, guild, target, incl
     avatarUrl:       target.displayAvatarURL({ extension: 'png', size: 256 }),
     balance:         eco?.balance          ?? 0,
     bank:            eco?.bank             ?? 0,
-    xp:              chatLevel.xp, // mesma fonte de /nivel; XP antigo da economia preservado
+    xp:              chatLevel.xp, // 1 XP por mensagem válida
+    chatLevel, // usa o mesmo snapshot de nível e progresso que /nivel
     activeBanner:    profile?.activeBanner  ?? null,
     activeRing:      profile?.activeRing    ?? null,
     ringBorderColor: profile?.ringBorderColor ?? null,

@@ -6,7 +6,7 @@ test('a arte rosa é um PNG real e usa dados do perfil, sem avatar externo',asyn
   const buffer=await createChatLevelImage({
     displayName:'Pessoa no Servidor',
     username:'usuario_exemplo',
-    fromLevel:0,toLevel:1,totalXp:211,
+    fromLevel:0,toLevel:1,totalXp:51,
     avatarUrl:null,
   });
   assert.ok(Buffer.isBuffer(buffer));
