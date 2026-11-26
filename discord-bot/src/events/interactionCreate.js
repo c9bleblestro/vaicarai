@@ -42,6 +42,7 @@ import {
   canAssumeTicket,
   canCloseTicket,
   getTicketNotificationTargets,
+  TICKET_OWNER_PERMISSIONS,
 } from '../utils/ticketPermissions.js';
 import {
   getSession,
@@ -963,7 +964,7 @@ export default {
 
           const permissionOverwrites = [
             { id: guild.roles.everyone, deny:  [PermissionFlagsBits.ViewChannel] },
-            { id: interaction.user.id,  allow: [PermissionFlagsBits.ViewChannel, PermissionFlagsBits.SendMessages, PermissionFlagsBits.ReadMessageHistory] },
+            { id: interaction.user.id,  allow: [...TICKET_OWNER_PERMISSIONS] },
             { id: client.user.id,       allow: [PermissionFlagsBits.ViewChannel, PermissionFlagsBits.SendMessages, PermissionFlagsBits.ReadMessageHistory, PermissionFlagsBits.ManageChannels, PermissionFlagsBits.AttachFiles] },
           ];
           if (pingRole) {
@@ -1875,7 +1876,7 @@ export default {
 
           const permissionOverwrites = [
             { id: guild.roles.everyone, deny:  [PermissionFlagsBits.ViewChannel] },
-            { id: interaction.user.id,  allow: [PermissionFlagsBits.ViewChannel, PermissionFlagsBits.SendMessages, PermissionFlagsBits.ReadMessageHistory] },
+            { id: interaction.user.id,  allow: [...TICKET_OWNER_PERMISSIONS] },
             { id: client.user.id,       allow: [PermissionFlagsBits.ViewChannel, PermissionFlagsBits.SendMessages, PermissionFlagsBits.ReadMessageHistory, PermissionFlagsBits.ManageChannels, PermissionFlagsBits.AttachFiles] },
           ];
 

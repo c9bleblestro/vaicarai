@@ -1,5 +1,6 @@
 import { PermissionFlagsBits } from 'discord.js';
 import prisma from '../database/client.js';
+import { isOpenTicketOwner } from './ticketPermissions.js';
 
 const URL_REGEX = /(?:https?|hxxps?|ftp):\/\/[^\s<>()]+|www\.[^\s<>()]+|(?<![@\w])(?:[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?\.)+(?:com|net|org|gg|io|me|tv|co|dev|app|xyz|site|online|shop|store|br|link|ly|fm)(?:\/[^\s<>()]*)?/gi;
 const DISCORD_REGEX = /(?:discord\.gg|discord(?:app)?\.com\/invite)\//i;
@@ -111,6 +112,16 @@ export function containsBlockedLink(message, cfg) {
 export async function enforceAntiLink(message, cfg) {
   const detected = containsBlockedLink(message, cfg);
   if (!detected) return false;
+  // A exceção não usa nome, categoria nem cargo: exige ticket aberto no
+  // mesmo servidor/canal e o autor registrado. Falha de banco não libera links.
+  const ticket = await prisma.ticket.findUnique({
+    where: { channelId: message.channelId },
+    select: { channelId: true, guildId: true, userId: true, status: true },
+  }).catch(error => {
+    console.warn('[ANTI-LINK] Falha ao consultar ticket:', error?.message ?? error);
+    return null;
+  });
+  if (isOpenTicketOwner(ticket, message.guildId, message.channelId, message.author?.id)) return false;
   const action = cfg.antiLinkAction ?? 'delete_warn';
   // A short batch window lets Discord remove a burst of identical links in
   // one request. Every item missing from the batch is retried individually.
