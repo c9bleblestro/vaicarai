@@ -6,6 +6,7 @@ import {renderStreakCard,appendStreakCard} from '../src/utils/interactionStreakC
 import {v2Simple} from '../src/utils/embed.js';
 import {collectionPage,buildStreakCollection} from '../src/commands/interacoes/foguinho.js';
 import {loadImage,createCanvas} from '@napi-rs/canvas';
+import {applyCoupleStreakAdjustment} from '../src/utils/interactionStreakAdjustment.js';
 import {loadEvolutionArt,drawEvolutionFrame,drawEvolutionFlame,evolutionIndex} from '../src/utils/interactionStreakArt.js';
 import {readFile} from 'node:fs/promises';
 import {createHash} from 'node:crypto';
@@ -87,5 +88,35 @@ test('usa as artes originais recortadas, sem rostos fixos',async()=>{
     ctx.clearRect(0,0,144,144);
     drawEvolutionFlame(ctx,atlas,72,72,tier);
     assert.ok(ctx.getImageData(0,0,144,144).data.some((v,i)=>i%4===3&&v>200));
+  }
+});
+
+test('ajuste administrativo: apenas casal confirmado, uma vez, sem afetar outras duplas',async()=>{
+  const stamp=String(Date.now()),a='test-a-'+stamp,b='test-b-'+stamp,c='test-c-'+stamp,g='adjust-'+stamp,key='test-'+stamp;
+  const now=new Date('2026-11-26T15:00:00Z'), tomorrow=new Date('2026-11-27T15:00:00Z');
+  try{
+    await prisma.userProfile.createMany({data:[{userId:a,marriedTo:b},{userId:b,marriedTo:a}]});
+    await recordInteractionStreak(g,a,b,now);
+    await recordInteractionStreak(g,b,a,now);
+    await recordInteractionStreak(g,a,c,now);
+    const result=await applyCoupleStreakAdjustment({userId:a,key,now});
+    assert.equal(result.status,'applied');
+    const state=await getInteractionStreak(g,a,b,now);
+    assert.equal(state.days,100);assert.equal(state.bestDays,100);assert.equal(state.complete,true);
+    assert.equal(streakMilestone(state.days).tier.name,'Chama opala');
+    assert.equal((await getInteractionStreak(g,a,c,now)).days,0);
+    await recordInteractionStreak(g,a,b,tomorrow);await recordInteractionStreak(g,b,a,tomorrow);
+    assert.equal((await getInteractionStreak(g,a,b,tomorrow)).days,101);
+    assert.equal((await applyCoupleStreakAdjustment({userId:a,key,now:tomorrow})).status,'already-applied');
+    assert.equal((await getInteractionStreak(g,a,b,tomorrow)).days,101);
+    await recordInteractionStreak(g+'-other',a,b,now);
+    assert.equal((await applyCoupleStreakAdjustment({userId:a,key:key+'-ambiguous',now})).status,'ambiguous-pair');
+    assert.equal((await getInteractionStreak(g+'-other',a,b,now)).days,0);
+    assert.equal((await applyCoupleStreakAdjustment({userId:c,key:key+'-unknown',now})).status,'unverified-couple');
+  }finally{
+    await prisma.interactionStreakAdjustment.deleteMany({where:{key:{startsWith:key}}});
+    await prisma.interactionStreak.deleteMany({where:{guildId:{startsWith:g}}});
+    await prisma.userProfile.deleteMany({where:{userId:{in:[a,b,c]}}});
+    await prisma.$disconnect();
   }
 });
