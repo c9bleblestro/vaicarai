@@ -59,3 +59,13 @@ export async function getInteractionStreak(guildId,a,b,date=new Date()){
   const row=await prisma.interactionStreak.findUnique({where:{guildId_userAId_userBId:{guildId,userAId,userBId}}});
   return streakView(row,streakDay(date));
 }
+
+/** Coleção do membro no servidor: sequência atual, pendências e recordes antigos. */
+export async function listInteractionStreaks(guildId,userId,date=new Date()){
+  const day=streakDay(date);
+  const rows=await prisma.interactionStreak.findMany({where:{guildId,OR:[{userAId:userId},{userBId:userId}]}});
+  return rows.map(row=>({
+    partnerId:row.userAId===userId?row.userBId:row.userAId,
+    ...streakView(row,day),
+  })).sort((a,b)=>b.days-a.days||Number(b.complete)-Number(a.complete)||Number(Boolean(b.mask))-Number(Boolean(a.mask))||b.bestDays-a.bestDays||a.partnerId.localeCompare(b.partnerId));
+}

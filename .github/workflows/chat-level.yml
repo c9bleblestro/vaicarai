@@ -51,6 +51,7 @@ jobs:
           node --check src/commands/interacoes/foguinho.js
           node --check src/utils/interactionStreak.js
           node --check src/utils/interactionStreakCard.js
+          node --check src/utils/interactionStreakArt.js
       - name: Prepare isolated test database
         run: npx prisma db push --skip-generate
       - name: Test XP rules and PNG rendering
