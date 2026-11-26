@@ -36,7 +36,7 @@ const CATEGORIES = [
     description: 'Comandos de interação social',
     emoji: '💬',
     title: '💬 Comandos de Interação',
-    commandNames: ['interacao', 'amigo', 'casamento', 'casar', 'divorciar'],
+    commandNames: ['interacao', 'foguinho', 'amigo', 'casamento', 'casar', 'divorciar'],
   },
   {
     value: 'utilidades',

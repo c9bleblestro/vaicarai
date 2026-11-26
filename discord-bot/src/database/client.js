@@ -586,4 +586,21 @@ export async function ensureMarriageSchema() {
   `);
 }
 
+/** Migração aditiva; não altera contadores ou economia existentes. */
+export async function ensureInteractionStreakSchema() {
+  await prisma.$executeRawUnsafe(`
+    CREATE TABLE IF NOT EXISTS "InteractionStreak" (
+      "guildId" TEXT NOT NULL,
+      "userAId" TEXT NOT NULL,
+      "userBId" TEXT NOT NULL,
+      "day" INTEGER NOT NULL,
+      "dayMask" INTEGER NOT NULL DEFAULT 0,
+      "days" INTEGER NOT NULL DEFAULT 0,
+      "bestDays" INTEGER NOT NULL DEFAULT 0,
+      "lastCompletedDay" INTEGER,
+      PRIMARY KEY ("guildId","userAId","userBId")
+    )
+  `);
+}
+
 export default prisma;

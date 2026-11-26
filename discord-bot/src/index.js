@@ -18,7 +18,7 @@ if (process.env.REPL_ID && !railwayMarkers.length) {
 
 import { Client, GatewayIntentBits, Partials, Collection } from 'discord.js';
 import { loadCommands } from './utils/loader.js';
-import { ensureCallRankSchema, ensureMarriageSchema, ensureChatLevelSchema } from './database/client.js';
+import { ensureCallRankSchema, ensureMarriageSchema, ensureChatLevelSchema, ensureInteractionStreakSchema } from './database/client.js';
 import { ensureCommandFine } from './utils/commandFine.js';
 import { readdirSync } from 'fs';
 import { fileURLToPath, pathToFileURL } from 'url';
@@ -76,6 +76,7 @@ process.on('uncaughtException',  err    => console.error('[UNCAUGHT EXCEPTION]',
     await ensureMarriageSchema();
     await ensureCallRankSchema();
     await ensureChatLevelSchema();
+    await ensureInteractionStreakSchema();
     await ensureCommandFine();
     await loadCommands(client);
 

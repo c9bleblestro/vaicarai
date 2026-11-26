@@ -3099,7 +3099,7 @@ export default {
           await interaction.editReply({
             components: interaction.message.components.filter(component => component.type !== 1),
           });
-          const payload = await buildInteractionEmbed(type, from, toUser, true, false);
+          const payload = await buildInteractionEmbed(type, from, toUser, true, false, interaction.guildId);
           return interaction.followUp(payload);
         }
 
