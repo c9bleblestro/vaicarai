@@ -45,14 +45,15 @@ export default {
   name: 'convite',
   aliases: ['invite'],
   async execute(interaction) {
-    // Resposta pública no ticket: autor e equipe podem copiar o mesmo link.
+    // Reconhece a interação antes de consultas externas para evitar timeout.
+    if (!interaction.guildId) return interaction.reply({ ...v2Simple('Este comando funciona apenas dentro de um ticket aberto.'), flags: MessageFlags.IsComponentsV2 | MessageFlags.Ephemeral });
+    await interaction.deferReply();
     try {
       const result = await buildTicketInvite(interaction.guild, interaction.channelId);
-      if (!result.ok) return await interaction.reply({ ...v2Simple(result.text), flags: MessageFlags.IsComponentsV2 | MessageFlags.Ephemeral });
-      return await interaction.reply(result.payload);
+      return await interaction.editReply(result.ok ? result.payload : v2Simple(result.text));
     } catch (error) {
       console.warn('[TICKET CONVITE]', error?.message ?? error);
-      if (!interaction.replied && !interaction.deferred) return interaction.reply({ ...v2Simple('Não consegui consultar o convite agora.'), flags: MessageFlags.IsComponentsV2 | MessageFlags.Ephemeral });
+      return interaction.editReply(v2Simple('Não consegui consultar o convite agora.'));
     }
   },
   async executePrefix(message) {
