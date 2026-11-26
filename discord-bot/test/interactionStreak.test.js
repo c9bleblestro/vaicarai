@@ -6,6 +6,9 @@ import {renderStreakCard,appendStreakCard} from '../src/utils/interactionStreakC
 import {v2Simple} from '../src/utils/embed.js';
 import {collectionPage,buildStreakCollection} from '../src/commands/interacoes/foguinho.js';
 import {loadImage,createCanvas} from '@napi-rs/canvas';
+import {loadEvolutionArt,drawEvolutionFrame,drawEvolutionFlame,evolutionIndex} from '../src/utils/interactionStreakArt.js';
+import {readFile} from 'node:fs/promises';
+import {createHash} from 'node:crypto';
 
 test('timezone, reciprocidade, concorrência, dia perdido e isolamento persistente',async()=>{
   const g='streak-test-'+Date.now(),a='100',b='200';
@@ -67,4 +70,22 @@ test('sete artes diferentes preservam fundo e texto fora das áreas dos ícones'
   const rows=Array.from({length:8},(_,i)=>i);
   assert.deepEqual(collectionPage(rows,1).items,[3,4,5]);
   assert.deepEqual(collectionPage(rows,99).items,[6,7]);
+});
+
+test('usa as artes originais recortadas, sem rostos fixos',async()=>{
+  const bytes=await readFile(new URL('../src/assets/foguinho-original-art.webp',import.meta.url));
+  assert.equal(createHash('sha256').update(bytes).digest('hex'),'befa96380322314af30c56e841c473b0ce444a7f129bcf983994db8ece28184e');
+  const atlas=await loadEvolutionArt();
+  assert.equal(atlas.width,1008);assert.equal(atlas.height,212);
+  const c=createCanvas(144,144),ctx=c.getContext('2d');
+  for(const [i,tier] of [0,3,7,14,30,60,100].entries()){
+    assert.equal(evolutionIndex(tier),i);
+    ctx.clearRect(0,0,144,144);
+    drawEvolutionFrame(ctx,atlas,72,72,tier);
+    assert.equal(ctx.getImageData(72,72,1,1).data[3],0,'centro deve ficar transparente');
+    assert.ok(ctx.getImageData(0,0,144,144).data.some((v,i)=>i%4===3&&v>200));
+    ctx.clearRect(0,0,144,144);
+    drawEvolutionFlame(ctx,atlas,72,72,tier);
+    assert.ok(ctx.getImageData(0,0,144,144).data.some((v,i)=>i%4===3&&v>200));
+  }
 });
