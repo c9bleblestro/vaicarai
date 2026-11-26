@@ -55,6 +55,7 @@ import {
 } from '../utils/containerSessions.js';
 import { handleShopInteraction } from '../utils/shopHandlers.js';
 import { buildProfilePayload } from '../commands/general/perfil.js';
+import { handleStreakCollectionPage } from '../commands/interacoes/foguinho.js';
 import { buildWalletCard, walletRefreshRow } from '../commands/economia/pf.js';
 import { handleImageSearchInteraction } from '../commands/general/imagens.js';
 import { handlePetButton } from '../commands/general/pet.js';
@@ -623,6 +624,9 @@ export default {
       }
 
       if (interaction.isButton() && await handleDeathEventInteraction(interaction, client)) return;
+      if (interaction.isButton() && interaction.customId.startsWith('foguinho_page:')) {
+        return await handleStreakCollectionPage(interaction);
+      }
       if (interaction.isButton() && interaction.customId.startsWith('callrank_page:')) {
         return await handleCallRankPage(interaction);
       }
