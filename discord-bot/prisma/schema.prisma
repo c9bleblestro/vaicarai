@@ -810,3 +810,12 @@ model InteractionStreak {
 
   @@id([guildId, userAId, userBId])
 }
+
+// Registro durável de ajustes administrativos pontuais do foguinho.
+model InteractionStreakAdjustment {
+  key String @id
+  guildId String
+  userAId String
+  userBId String
+  appliedAt DateTime @default(now())
+}

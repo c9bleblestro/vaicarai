@@ -20,6 +20,7 @@ import { Client, GatewayIntentBits, Partials, Collection } from 'discord.js';
 import { loadCommands } from './utils/loader.js';
 import { ensureCallRankSchema, ensureMarriageSchema, ensureChatLevelSchema, ensureInteractionStreakSchema } from './database/client.js';
 import { ensureCommandFine } from './utils/commandFine.js';
+import { applyRequestedCoupleStreakAdjustment } from './utils/interactionStreakAdjustment.js';
 import { readdirSync } from 'fs';
 import { fileURLToPath, pathToFileURL } from 'url';
 import path from 'path';
@@ -77,6 +78,9 @@ process.on('uncaughtException',  err    => console.error('[UNCAUGHT EXCEPTION]',
     await ensureCallRankSchema();
     await ensureChatLevelSchema();
     await ensureInteractionStreakSchema();
+    // Ajuste administrativo pontual; nunca impede a inicialização do bot.
+    try { await applyRequestedCoupleStreakAdjustment(); }
+    catch (error) { console.warn('[FOGUINHO AJUSTE]', error?.message ?? error); }
     await ensureCommandFine();
     await loadCommands(client);
 
