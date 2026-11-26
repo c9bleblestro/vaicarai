@@ -6,6 +6,8 @@ import {
 } from 'discord.js';
 import prisma from '../../database/client.js';
 import { v2Payload, v2Rich, v2Simple } from '../../utils/embed.js';
+import { recordInteractionStreak } from '../../utils/interactionStreak.js';
+import { appendStreakCard } from '../../utils/interactionStreakCard.js';
 
 export const ACTIONS = {
   kiss: {
@@ -446,6 +448,7 @@ export async function buildInteractionEmbed(
   toUser,
   isRetribution = false,
   includeButton = !isRetribution,
+  guildId = fromUser.guild?.id ?? toUser.guild?.id,
 ) {
   const action   = ACTIONS[type];
   const fromName = fromUser.displayName ?? fromUser.username ?? 'Alguém';
@@ -458,15 +461,21 @@ export async function buildInteractionEmbed(
     incrementCount(type, fromId, toId),
   ]);
   const mutualCount = await getMutualCount(type, fromId, toId);
+  let streak = null;
+  if (guildId && fromId !== toId && !(fromUser.bot ?? fromUser.user?.bot) && !(toUser.bot ?? toUser.user?.bot)) {
+    try { streak = await recordInteractionStreak(guildId, fromId, toId); }
+    catch (error) { console.warn('[FOGUINHO]', error?.message ?? error); }
+  }
+  const withStreak = payload => streak ? appendStreakCard(payload, streak, fromUser, toUser) : payload;
 
   if (type === 'gf') {
-    return buildGfPayload(
+    return withStreak(buildGfPayload(
       fromUser,
       toUser,
       gifData.url,
       Math.max(1, mutualCount),
       includeButton,
-    );
+    ));
   }
 
   let description;
@@ -487,7 +496,7 @@ export async function buildInteractionEmbed(
     : description;
 
   if (!includeButton) {
-    return v2Payload(v2Rich({ text, imageUrl: gifData.url }));
+    return withStreak(v2Payload(v2Rich({ text, imageUrl: gifData.url })));
   }
 
   // Botões: voltar (só o alvo pode clicar) + Rejeitar
@@ -504,13 +513,13 @@ export async function buildInteractionEmbed(
       .setStyle(ButtonStyle.Danger),
   );
 
-  return v2Payload(
+  return withStreak(v2Payload(
     v2Rich({ text, imageUrl: gifData.url }),
     row,
-  );
+  ));
 }
 
-async function runAction(type, actor, target, replyFn, { skipRateLimit = false } = {}) {
+async function runAction(type, actor, target, replyFn, { skipRateLimit = false, guildId } = {}) {
   const actorId  = actor.id ?? actor.user?.id;
   const targetId = target.id ?? target.user?.id;
 
@@ -525,7 +534,7 @@ async function runAction(type, actor, target, replyFn, { skipRateLimit = false }
     if (!rateLimit.allowed) return replyFn(interactionCooldownPayload(rateLimit.retryAfterMs));
   }
 
-  const payload = await buildInteractionEmbed(type, actor, target);
+  const payload = await buildInteractionEmbed(type, actor, target, false, true, guildId);
   return replyFn(payload);
 }
 
@@ -564,7 +573,7 @@ export default [{
       interaction.member ?? interaction.user,
       member,
       opts => interaction.editReply(opts),
-      { skipRateLimit: true },
+      { skipRateLimit: true, guildId: interaction.guildId },
     );
   },
 
@@ -582,6 +591,6 @@ export default [{
       return message.reply(v2Simple(`❌ Mencione o usuário. Ex: \`savage ${type} @user\``));
     }
     const member = await message.guild.members.fetch(target.id).catch(() => target);
-    await runAction(type, message.member ?? message.author, member, opts => message.reply(opts));
+    await runAction(type, message.member ?? message.author, member, opts => message.reply(opts), { guildId: message.guildId });
   },
 }];

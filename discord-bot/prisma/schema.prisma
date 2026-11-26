@@ -795,3 +795,18 @@ model ChatLevelCooldown {
   @@unique([guildId, userId])
   @@index([guildId])
 }
+
+
+// Foguinho diário: uma sequência compartilhada por dupla e servidor.
+model InteractionStreak {
+  guildId String
+  userAId String
+  userBId String
+  day Int
+  dayMask Int @default(0)
+  days Int @default(0)
+  bestDays Int @default(0)
+  lastCompletedDay Int?
+
+  @@id([guildId, userAId, userBId])
+}
