@@ -2,7 +2,7 @@ import {createCanvas,loadImage,GlobalFonts} from '@napi-rs/canvas';
 import {fileURLToPath} from 'node:url';
 import {AttachmentBuilder,MediaGalleryBuilder,MediaGalleryItemBuilder,SeparatorBuilder,TextDisplayBuilder} from 'discord.js';
 import {streakMilestone} from './interactionStreak.js';
-import {drawEvolutionFlame,drawEvolutionFrame} from './interactionStreakArt.js';
+import {loadEvolutionArt,drawEvolutionFlame,drawEvolutionFrame,evolutionProgressFill,AVATAR_RADIUS} from './interactionStreakArt.js';
 
 try{GlobalFonts.registerFromPath(fileURLToPath(new URL('../../fonts/Roboto-Regular.ttf',import.meta.url)),'StreakRoboto');
 GlobalFonts.registerFromPath(fileURLToPath(new URL('../../fonts/Roboto-Bold.ttf',import.meta.url)),'StreakRoboto');}catch{}
@@ -24,14 +24,19 @@ async function avatar(user){
     const image=(async()=>{try{const res=await fetch(url,{signal:AbortSignal.timeout(2500)});if(!res.ok)return null;return await loadImage(Buffer.from(await res.arrayBuffer()));}catch{return null;}})();
     avatarCache.set(url,{until:now+60_000,image});return await image;}catch{return null;}
 }
-function portrait(ctx,img,name,x,y,tier,active){
-  const color=active?tier.color:'#88818b';
-  ctx.save();ctx.beginPath();ctx.arc(x,y,49,0,Math.PI*2);ctx.fillStyle='#363138';ctx.fill();ctx.strokeStyle=color;ctx.lineWidth=3;ctx.stroke();
-  ctx.beginPath();ctx.arc(x,y,44,0,Math.PI*2);ctx.clip();
-  if(img){const size=Math.min(img.width,img.height);ctx.drawImage(img,(img.width-size)/2,(img.height-size)/2,size,size,x-44,y-44,88,88);}
+function portrait(ctx,img,name,x,y,tier,atlas){
+  const r=atlas?AVATAR_RADIUS:44;
+  ctx.save();
+  if(!atlas){
+    ctx.beginPath();ctx.arc(x,y,49,0,Math.PI*2);ctx.fillStyle='#363138';ctx.fill();
+    ctx.strokeStyle='#88818b';ctx.lineWidth=3;ctx.stroke();
+  }
+  ctx.beginPath();ctx.arc(x,y,r,0,Math.PI*2);ctx.clip();
+  ctx.fillStyle='#363138';ctx.fillRect(x-r,y-r,r*2,r*2);
+  if(img){const size=Math.min(img.width,img.height);ctx.drawImage(img,(img.width-size)/2,(img.height-size)/2,size,size,x-r,y-r,r*2,r*2);}
   else label(ctx,name.slice(0,1).toUpperCase(),x,y,36,'#f6ede7',true);
   ctx.restore();
-  if(active)drawEvolutionFrame(ctx,x,y,tier.days);
+  if(atlas)drawEvolutionFrame(ctx,atlas,x,y,tier.days);
   label(ctx,name,x,y+66,17,'#ede6e3',true,180);
 }
 function flame(ctx,x,y,color){
@@ -43,22 +48,25 @@ export function streakStatus(s){
   return s.complete?'Foguinho mantido hoje!':s.mask?'Falta a outra pessoa interagir hoje.':'Interajam entre si para acender o foguinho de hoje.';
 }
 export async function renderStreakCard(s,a,b){
-  const [avA,avB]=await Promise.all([avatar(a),avatar(b)]);
+  const [avA,avB,atlas]=await Promise.all([avatar(a),avatar(b),s.days>0?loadEvolutionArt():null]);
   const {tier,next}=streakMilestone(s.days);
   const c=createCanvas(760,264),ctx=c.getContext('2d');
   round(ctx,0,0,760,264,24);ctx.fillStyle='#242329';ctx.fill();
   round(ctx,1,1,758,262,24);ctx.strokeStyle='#454049';ctx.lineWidth=2;ctx.stroke();
   label(ctx,'FOGUINHO  •  '+tier.name.toUpperCase(),380,23,15,'#bdb1b4',true);
-  portrait(ctx,avA,nameOf(a),120,91,tier,s.days>0);portrait(ctx,avB,nameOf(b),640,91,tier,s.days>0);
-  if(s.days>0)drawEvolutionFlame(ctx,337,70,tier.days);else flame(ctx,337,70,'#88818b');
-  label(ctx,String(s.days),397,70,48,'#fff4ec',true,140);
+  portrait(ctx,avA,nameOf(a),120,91,tier,atlas);portrait(ctx,avB,nameOf(b),640,91,tier,atlas);
+  if(atlas)drawEvolutionFlame(ctx,atlas,337,70,tier.days);else flame(ctx,337,70,'#88818b');
+  // Dias longos não devem cobrir o mascote.
+  ctx.font='bold 48px '+font;
+  const numberX=atlas?Math.max(397,378+Math.min(140,ctx.measureText(String(s.days)).width)/2):397;
+  label(ctx,String(s.days),numberX,70,48,'#fff4ec',true,140);
   label(ctx,s.days===1?'dia consecutivo':'dias consecutivos',380,113,17,'#c6bcc0');
   label(ctx,s.days?'Uma amizade em chamas!':'Uma amizade começa aqui!',380,146,20,'#f4ece7',true);
   label(ctx,streakStatus(s),380,181,16,s.complete?'#a7d9a9':'#d6c1b1',false,700);
   const x=34,y=209,w=692;
   round(ctx,x,y,w,9,4.5);ctx.fillStyle='#454149';ctx.fill();
   const progress=next?Math.min(1,s.days/next.days):1;
-  if(progress>0){round(ctx,x,y,Math.max(2,w*progress),9,4.5);ctx.fillStyle=tier.color;ctx.fill();}
+  if(progress>0){round(ctx,x,y,Math.max(2,w*progress),9,4.5);ctx.fillStyle=evolutionProgressFill(ctx,x,y,w*progress,tier.days);ctx.fill();}
   label(ctx,next?'Próxima chama: '+next.name+' • '+s.days+'/'+next.days+' dias':'Todas as chamas desbloqueadas',380,239,15,'#d4c8ca',false,700);
   return c.toBuffer('image/png');
 }
