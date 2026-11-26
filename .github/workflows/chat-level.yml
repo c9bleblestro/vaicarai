@@ -45,6 +45,8 @@ jobs:
           node --check src/utils/ticketPermissions.js
           node --check src/utils/antiLink.js
           node --check src/commands/ticket/convite.js
+          node --check src/commands/ticket/ticket.js
+          node --check src/utils/ticketInviteTemplate.js
           node --check src/utils/chatLevel.js
           node --check src/utils/chatLevelCard.js
           node --check src/utils/painelHandlers.js

@@ -480,7 +480,8 @@ export default {
       // ── ATENDIMENTO AUTOMÁTICO NOS TICKETS ────────────────────────────────
       // Menções ao bot não acionam a IA. O atendimento automático de tickets
       // continua disponível apenas para mensagens sem uma menção direta.
-      if (!botMentioned && await handleTicketAI(message, cfg)) return;
+      const isTicketInviteCommand = /^(?:savage|s)\s+(?:invite|convite)(?:\s|$)/i.test(message.content ?? '');
+      if (!botMentioned && !isTicketInviteCommand && await handleTicketAI(message, cfg)) return;
 
       // ── PARCERIAS AUTO-DETECT ──────────────────────────────────────────────
       if (cfg?.partnerEnabled && cfg?.partnerChannel && message.channelId === cfg.partnerChannel) {

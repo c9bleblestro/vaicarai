@@ -108,6 +108,15 @@ export async function syncOpenTicketMediaPermissions(client) {
       const current = await prisma.ticket.findUnique({ where: { channelId: ticket.channelId } });
       if (!isOpenTicketOwner(current, ticket.guildId, ticket.channelId, ticket.userId)) continue;
       if (await ensureTicketOwnerMedia(channel, current)) updated++;
+      // O bot precisa inserir links para o cartão nativo do Discord.
+      const botId = client.user?.id;
+      const botOverwrite = botId && channel.permissionOverwrites?.cache.get(botId);
+      if (channel.type === ChannelType.GuildText && botOverwrite?.type === OverwriteType.Member
+        && botOverwrite.allow.has(PermissionFlagsBits.ViewChannel)
+        && botOverwrite.allow.has(PermissionFlagsBits.SendMessages)
+        && !botOverwrite.allow.has(PermissionFlagsBits.EmbedLinks)) {
+        await channel.permissionOverwrites.edit(botId, { EmbedLinks: true }, { type: OverwriteType.Member, reason: 'Prévia do convite no ticket' });
+      }
     } catch (error) {
       failed++;
       console.warn('[TICKET MÍDIA]', ticket.channelId, error?.message ?? error);
