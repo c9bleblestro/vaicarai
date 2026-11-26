@@ -965,7 +965,7 @@ export default {
           const permissionOverwrites = [
             { id: guild.roles.everyone, deny:  [PermissionFlagsBits.ViewChannel] },
             { id: interaction.user.id,  allow: [...TICKET_OWNER_PERMISSIONS] },
-            { id: client.user.id,       allow: [PermissionFlagsBits.ViewChannel, PermissionFlagsBits.SendMessages, PermissionFlagsBits.ReadMessageHistory, PermissionFlagsBits.ManageChannels, PermissionFlagsBits.AttachFiles] },
+            { id: client.user.id,       allow: [PermissionFlagsBits.ViewChannel, PermissionFlagsBits.SendMessages, PermissionFlagsBits.ReadMessageHistory, PermissionFlagsBits.ManageChannels, PermissionFlagsBits.AttachFiles, PermissionFlagsBits.EmbedLinks] },
           ];
           if (pingRole) {
             for (const rId of idList(pingRole)) {
@@ -1877,7 +1877,7 @@ export default {
           const permissionOverwrites = [
             { id: guild.roles.everyone, deny:  [PermissionFlagsBits.ViewChannel] },
             { id: interaction.user.id,  allow: [...TICKET_OWNER_PERMISSIONS] },
-            { id: client.user.id,       allow: [PermissionFlagsBits.ViewChannel, PermissionFlagsBits.SendMessages, PermissionFlagsBits.ReadMessageHistory, PermissionFlagsBits.ManageChannels, PermissionFlagsBits.AttachFiles] },
+            { id: client.user.id,       allow: [PermissionFlagsBits.ViewChannel, PermissionFlagsBits.SendMessages, PermissionFlagsBits.ReadMessageHistory, PermissionFlagsBits.ManageChannels, PermissionFlagsBits.AttachFiles, PermissionFlagsBits.EmbedLinks] },
           ];
 
           if (config?.ticketPingRole) {

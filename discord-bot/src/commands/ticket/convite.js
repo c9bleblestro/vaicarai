@@ -1,6 +1,7 @@
-import { SlashCommandBuilder, MessageFlags, ActionRowBuilder, ButtonBuilder, ButtonStyle, escapeMarkdown } from 'discord.js';
+import { SlashCommandBuilder, MessageFlags } from 'discord.js';
 import prisma from '../../database/client.js';
-import { v2Simple, v2Rich, v2Payload } from '../../utils/embed.js';
+import { v2Simple } from '../../utils/embed.js';
+import { templateMessagePayload } from '../../utils/ticketInviteTemplate.js';
 
 const validCode = code => typeof code === 'string' && /^[a-zA-Z0-9_-]{1,100}$/.test(code);
 export async function getVanityInvite(guild) {
@@ -21,6 +22,8 @@ export async function buildTicketInvite(guild, channelId, db = prisma) {
   if (!ticket || ticket.guildId !== guild.id || ticket.channelId !== channelId || ticket.status !== 'open') {
     return { ok: false, text: 'Este comando funciona apenas dentro de um ticket aberto.' };
   }
+  const template = await db.ticketInviteTemplate.findUnique({ where: { guildId: guild.id } });
+  if (template) return { ok: true, payload: templateMessagePayload(template) };
   let url;
   try { url = await getVanityInvite(guild); }
   catch (error) {
@@ -28,15 +31,8 @@ export async function buildTicketInvite(guild, channelId, db = prisma) {
     return { ok: false, text: 'Não consegui consultar o convite personalizado. Peça ajuda à equipe.' };
   }
   if (!url) return { ok: false, text: 'O servidor não possui um convite personalizado disponível no Discord.' };
-  const title = escapeMarkdown(guild.name ?? 'Servidor');
-  const container = v2Rich({
-    text: '## 🔗 Convite oficial\n**' + title + '**\n\n' + url + '\n\n-# Copie o link acima para usar na parceria.',
-    thumbnailUrl: guild.iconURL?.({ size: 128 }) ?? null,
-  });
-  const row = new ActionRowBuilder().addComponents(
-    new ButtonBuilder().setStyle(ButtonStyle.Link).setLabel('Abrir convite').setURL(url),
-  );
-  return { ok: true, payload: { ...v2Payload(container, row), allowedMentions: { parse: [], repliedUser: false } } };
+  // Mensagem comum para o Discord gerar o próprio cartão de convite.
+  return { ok: true, payload: { content: url, allowedMentions: { parse: [], repliedUser: false } } };
 }
 
 export default {
@@ -59,7 +55,7 @@ export default {
   async executePrefix(message) {
     try {
       const result = await buildTicketInvite(message.guild, message.channelId);
-      return await message.reply(result.ok ? result.payload : { ...v2Simple(result.text), allowedMentions: { repliedUser: false } });
+      return result.ok ? await message.channel.send(result.payload) : await message.reply({ ...v2Simple(result.text), allowedMentions: { repliedUser: false } });
     } catch (error) {
       console.warn('[TICKET CONVITE]', error?.message ?? error);
       return message.reply(v2Simple('Não consegui consultar o convite agora.'));

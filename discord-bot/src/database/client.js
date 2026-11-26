@@ -603,4 +603,16 @@ export async function ensureInteractionStreakSchema() {
   `);
 }
 
+export async function ensureTicketInviteTemplateSchema() {
+  await prisma.$executeRaw`
+    CREATE TABLE IF NOT EXISTS "TicketInviteTemplate" (
+      "guildId" TEXT PRIMARY KEY,
+      "content" TEXT NOT NULL,
+      "attachments" JSONB NOT NULL,
+      "savedBy" TEXT NOT NULL,
+      "updatedAt" TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP
+    )
+  `;
+}
+
 export default prisma;
