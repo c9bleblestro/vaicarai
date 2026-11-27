@@ -649,24 +649,36 @@ export async function handleWorkInteraction(i){
     if(!result.ok){const {ephemeral,...error}=workErrorPayload(result);return i.editReply({attachments:[],...error});}
     return i.editReply({attachments:[],...workResultPayload(result)});
   }
+  await i.deferUpdate();
   const eco=await getEco(i.user.id,i.guildId),job=WORK_JOBS.find(j=>j.key===i.values[0]),level=workLevelFromXp(eco.workXp);
-  if(!job||job.minLevel>level)return i.reply(workErrorPayload({reason:'locked',job}));
+  if(!job||job.minLevel>level)return i.followUp(workErrorPayload({reason:'locked',job}));
   const elapsed=Date.now()-(eco.lastWork?.getTime()??0);
-  if(elapsed<WORK_CD&&!await hasConfiguredEconomyBypass({guildId:i.guildId,member:i.member}))return i.reply(workErrorPayload({reason:'cooldown',remaining:WORK_CD-elapsed}));
+  if(elapsed<WORK_CD&&!await hasConfiguredEconomyBypass({guildId:i.guildId,member:i.member}))return i.followUp(workErrorPayload({reason:'cooldown',remaining:WORK_CD-elapsed}));
   pruneChallenges();
   const key=randomBytes(8).toString('hex'),ch=makeWorkChallenge(job.key);
   workChallenges.set(key,{...ch,job:job.key,owner:i.user.id,guild:i.guildId,message:i.message.id,expires:Date.now()+120000});
   const menu=new StringSelectMenuBuilder().setCustomId('work_answer:'+i.user.id+':'+key).setPlaceholder('Escolha a resposta').addOptions(ch.options.map((label,index)=>({label,value:String(index)})));
-  return i.update({attachments:[],...trabalhoPayload('## '+job.emoji+' '+job.name+'\n'+ch.prompt+'\nVocê tem 2 minutos. Responda para receber seu pagamento.',[new ActionRowBuilder().addComponents(menu)],{job:job.key,status:'Desafio ativo',subtitle:'MISSÃO PROFISSIONAL',detail:job.name,footer:'Uma tentativa • 2 minutos'})});
+  return i.editReply({attachments:[],...trabalhoPayload('## '+job.emoji+' '+job.name+'\n'+ch.prompt+'\nVocê tem 2 minutos. Responda para receber seu pagamento.',[new ActionRowBuilder().addComponents(menu)],{job:job.key,status:'Desafio ativo',subtitle:'MISSÃO PROFISSIONAL',detail:job.name,footer:'Uma tentativa • 2 minutos'})});
+}
+async function careerRankingPayload(guildId,userId){
+  const [top,own]=await Promise.all([
+    prisma.economy.findMany({where:{guildId,workXp:{gt:0}},orderBy:[{workXp:'desc'},{userId:'asc'}],take:10,select:{userId:true,workXp:true}}),
+    getEco(userId,guildId)
+  ]);
+  const rank=1+await prisma.economy.count({where:{guildId,workXp:{gt:own.workXp}}});
+  const text=top.map((r,i)=>'**'+(i+1)+'.** <@'+r.userId+'> — '+r.workXp.toLocaleString('pt-BR')+' XP · nível '+workLevelFromXp(r.workXp)).join('\n')||'Ainda não há trabalhadores no ranking.';
+  return {...trabalhoPayload('## Ranking de carreiras\n'+text+'\n\nSua carreira: nível **'+workLevelFromXp(own.workXp)+'** · '+own.workXp+' XP'+(own.workXp>0?' · posição '+rank:''),[],{status:'Top trabalhadores',subtitle:'RANKING DO SERVIDOR',detail:'Seu XP: '+own.workXp,footer:'Ranking por XP trabalhista'}),allowedMentions:{parse:[],repliedUser:false}};
 }
 const cmdTrabalho = {
   data: new SlashCommandBuilder()
     .setName('trabalho')
-    .setDescription('💼 Escolha uma profissão e trabalhe (1h cooldown)'),
+    .setDescription('Escolha uma profissão, trabalhe ou veja o ranking')
+    .addStringOption(o=>o.setName('acao').setDescription('Consultar ranking de carreiras').addChoices({name:'Ranking',value:'ranking'})),
   name: 'trabalho',
   aliases: ['trab', 'work'],
 
   async execute(interaction) {
+    if(interaction.options.getString('acao')==='ranking'){await interaction.deferReply();return interaction.editReply(await careerRankingPayload(interaction.guildId,interaction.user.id));}
     const eco     = await getEco(interaction.user.id, interaction.guildId);
     const canBypassCooldown = await hasConfiguredEconomyBypass({
       guildId: interaction.guildId,
@@ -680,7 +692,8 @@ const cmdTrabalho = {
     return interaction.reply(workMenuPayload(eco));
   },
 
-  async executePrefix(message) {
+  async executePrefix(message,args=[]) {
+    if(['ranking','top'].includes(args[0]?.toLowerCase()))return message.reply(await careerRankingPayload(message.guildId,message.author.id));
     const eco     = await getEco(message.author.id, message.guildId);
     const canBypassCooldown = await hasConfiguredEconomyBypass({
       guildId: message.guildId,
