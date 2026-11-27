@@ -26,6 +26,20 @@ const pimentinhaCache=new Map();
 export function getPimentinhaClip(view='room',action='idle'){
   const key=view==='portrait'?'portrait-idle':Object.hasOwn(PIMENTINHA_FILES,'room-'+action)?'room-'+action:'room-idle';
   if(pimentinhaCache.has(key))return pimentinhaCache.get(key);
+  // Use only the exact approved composite, without re-encoding or redrawing.
+  // Keep the previous clip until the approved binary is present.
+  if(key==='room-idle'){
+    let approved;
+    try{approved=readFileSync(new URL('../assets/pet-world/pimentinha/room-idle-approved.gif',import.meta.url));}
+    catch(error){if(error.code!=='ENOENT')throw error;}
+    if(approved){
+      if(createHash('sha256').update(approved).digest('hex')!=='176cdd3fcff1c841339b4ceaf5107d3748d9f846a077918ac9844b8e3b2d0566')throw Error('Approved Pimentinha room checksum mismatch');
+      const parsed=parseGIF(approved.buffer.slice(approved.byteOffset,approved.byteOffset+approved.byteLength));
+      const frames=decompressFrames(parsed,false);
+      if(approved.length!==1868279||parsed.lsd.width!==537||parsed.lsd.height!==390||frames.length!==16||frames.reduce((sum,f)=>sum+f.delay,0)!==3000)throw Error('Invalid approved Pimentinha room');
+      pimentinhaCache.set(key,approved);return approved;
+    }
+  }
   const buffer=readFileSync(new URL('../assets/pet-world/pimentinha/'+key+'.gif',import.meta.url));
   if(createHash('sha256').update(buffer).digest('hex')!==PIMENTINHA_FILES[key])throw Error('Pimentinha asset checksum mismatch: '+key);
   const parsed=parseGIF(buffer.buffer.slice(buffer.byteOffset,buffer.byteOffset+buffer.byteLength));
