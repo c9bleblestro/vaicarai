@@ -1694,16 +1694,14 @@ export default {
           await interaction.deferReply({flags:MessageFlags.Ephemeral});
           const votes=await getInstaVotes(postId);
           const list=ids=>ids.length?ids.slice(0,25).map(id=>'<@'+id+'>').join(', ')+(ids.length>25?' e mais '+(ids.length-25):''):'Ninguém ainda.';
-          const row=new ActionRowBuilder().addComponents(new ButtonBuilder().setCustomId('insta_v2_comment_'+interaction.channelId+'_'+interaction.message.id).setEmoji(getEmoji('insta_comment')).setLabel('Comentar').setStyle(ButtonStyle.Secondary));
+          const row=new ActionRowBuilder();
           const cfg=await prisma.guildConfig.findUnique({where:{guildId:interaction.guildId}});
           if(cfg?.instaHandle&&/^[A-Za-z0-9._]{1,30}$/.test(cfg.instaHandle))row.addComponents(new ButtonBuilder().setStyle(ButtonStyle.Link).setURL('https://www.instagram.com/'+cfg.instaHandle+'/').setLabel('@'+cfg.instaHandle));
-          return interaction.editReply({content:'**Curtidas ('+votes.yes.length+')**\n'+list(votes.yes)+'\n\n**Não curtidas ('+votes.no.length+')**\n'+list(votes.no),components:[row],allowedMentions:{parse:[]}});
+          return interaction.editReply({content:'**Curtidas ('+votes.yes.length+')**\n'+list(votes.yes)+'\n\n**Não curtidas ('+votes.no.length+')**\n'+list(votes.no),components:row.components.length?[row]:[],allowedMentions:{parse:[]}});
         }
-        if(customId.startsWith('insta_v2_comment_')){
-          const ids=customId.slice('insta_v2_comment_'.length);
-          const modal=new ModalBuilder().setCustomId('insta_v2_cmodal_'+ids).setTitle('Enviar comentário');
-          modal.addComponents(new ActionRowBuilder().addComponents(new TextInputBuilder().setCustomId('comment').setLabel('Seu comentário').setStyle(TextInputStyle.Paragraph).setRequired(true).setMaxLength(500)));
-          return interaction.showModal(modal);
+        // Acknowledge obsolete buttons without creating a comment or thread.
+        if(customId.startsWith('insta_v2_comment_')||customId.startsWith('insta_comment_')){
+          return interaction.reply({content:'Os comentários do Instagram foram desativados.',flags:MessageFlags.Ephemeral});
         }
         // ── INSTAGRAM: Toggle like ───────────────────────────────────────
         if (customId.startsWith('insta_like_')) {
@@ -1752,26 +1750,6 @@ export default {
             embeds: [new EmbedBuilder().setColor(0x833AB4).setTitle(`💜 Curtidas — ${likes.size}`).setDescription(list)],
             ephemeral: true,
           });
-        }
-
-        // ── INSTAGRAM: Comentar ─────────────────────────────────────────
-        if (customId.startsWith('insta_comment_')) {
-          const threadId = customId.slice('insta_comment_'.length);
-          const modal = new ModalBuilder()
-            .setCustomId(`insta_cmodal_${threadId}`)
-            .setTitle('💬 Enviar Comentário');
-          modal.addComponents(
-            new ActionRowBuilder().addComponents(
-              new TextInputBuilder()
-                .setCustomId('comment')
-                .setLabel('Seu comentário')
-                .setStyle(TextInputStyle.Paragraph)
-                .setPlaceholder('Escreva seu comentário...')
-                .setRequired(true)
-                .setMaxLength(500)
-            ),
-          );
-          return interaction.showModal(modal);
         }
 
         // ── INSTAGRAM: Deletar ───────────────────────────────────────────
@@ -4047,44 +4025,9 @@ export default {
           return handleVipConfigModal(interaction);
         }
 
-        if(interaction.customId.startsWith('insta_v2_cmodal_')){
-          const [channelId,messageId]=interaction.customId.slice('insta_v2_cmodal_'.length).split('_');
-          await interaction.deferReply({flags:MessageFlags.Ephemeral});
-          try{
-            const channel=await interaction.guild.channels.fetch(channelId);
-            const post=await channel.messages.fetch(messageId);
-            if(post.author.id!==interaction.client.user.id||!JSON.stringify(post.components).includes('insta_v2_info_'))throw Error('Publicação inválida');
-            let thread=post.thread??await interaction.guild.channels.fetch(messageId).catch(()=>null);
-            if(!thread){try{thread=await post.startThread({name:'Comentários',autoArchiveDuration:1440});}catch(error){thread=await interaction.guild.channels.fetch(messageId).catch(()=>null);if(!thread)throw error;}}
-            await thread.send({embeds:[new EmbedBuilder().setColor(0x2B2D31).setAuthor({name:interaction.member?.displayName??interaction.user.username,iconURL:interaction.user.displayAvatarURL()}).setDescription(interaction.fields.getTextInputValue('comment')).setTimestamp()],allowedMentions:{parse:[]}});
-            return interaction.editReply({content:'Comentário enviado!'});
-          }catch(error){console.error('[INSTA COMMENT]',error?.message??error);return interaction.editReply({content:'Não foi possível enviar o comentário.'});}
-        }
-        // ── INSTAGRAM: Comentário enviado ───────────────────────────────
-        if (interaction.customId.startsWith('insta_cmodal_')) {
-          const threadId = interaction.customId.slice('insta_cmodal_'.length);
-          const text     = interaction.fields.getTextInputValue('comment');
-
-          await interaction.deferReply({ ephemeral: true });
-          try {
-            const thread = await interaction.guild.channels.fetch(threadId);
-            if (!thread) throw new Error('Thread não encontrada');
-
-            const authorName  = interaction.member?.displayName ?? interaction.user.username;
-            const avatarUrl   = interaction.user.displayAvatarURL({ extension: 'png', size: 64 });
-
-            const commentEmbed = new EmbedBuilder()
-              .setColor(0x2B2D31)
-              .setAuthor({ name: authorName, iconURL: avatarUrl })
-              .setDescription(text)
-              .setTimestamp();
-
-            await thread.send({ embeds: [commentEmbed] });
-            return interaction.editReply({ content: '✅ Comentário enviado!' });
-          } catch (e) {
-            console.error('[INSTA COMMENT]', e.message);
-            return interaction.editReply({ content: '❌ Não foi possível enviar o comentário.' });
-          }
+        // Also reject any Instagram comment modal opened before this update.
+        if(interaction.customId.startsWith('insta_v2_cmodal_')||interaction.customId.startsWith('insta_cmodal_')){
+          return interaction.reply({content:'Os comentários do Instagram foram desativados.',flags:MessageFlags.Ephemeral});
         }
 
         // ── TICKET MENU: Adicionar nova opção ───────────────────────────
