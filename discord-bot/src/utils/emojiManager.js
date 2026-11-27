@@ -1,5 +1,6 @@
 import { readFile } from 'node:fs/promises';
 import { INSTA_EMOJI_ASSETS } from './instaEmojiAssets.js';
+import { makeInstaHeaderGif } from './instaHeaderArt.js';
 import { fileURLToPath } from 'node:url';
 import path from 'node:path';
 import { createCanvas, loadImage } from '@napi-rs/canvas';
@@ -68,6 +69,7 @@ const REQUIRED_EMOJIS = [
   { name: 'insta_comment',   asset: 'insta-comment.webp', mime: 'image/webp', fallback: '💬' },
   { name: 'insta_like',      asset: 'insta-like.webp',    mime: 'image/webp', fallback: '💜' },
   { name: 'insta_white_header', inline: 'header', mime: 'image/png', fallback: '▫️' },
+  { name: 'insta_header_motion', generated: 'instaHeader', animated: true, mime: 'image/gif', fallback: '▫️' },
   { name: 'insta_white_like', inline: 'like', mime: 'image/png', fallback: '✔️' },
   { name: 'insta_white_dislike', inline: 'dislike', mime: 'image/png', fallback: '✖️' },
   { name: 'insta_white_delete', inline: 'delete', mime: 'image/png', fallback: '🗑️' },
@@ -220,7 +222,9 @@ export async function initEmojis(client) {
       try {
         let buf;
         let mime = def.mime;
-        if (def.inline) {
+        if (def.generated === 'instaHeader') {
+          buf = await makeInstaHeaderGif();
+        } else if (def.inline) {
           buf = Buffer.from(INSTA_EMOJI_ASSETS[def.inline], 'base64');
         } else if (def.asset) {
           ({ buffer: buf, mime } = await readEmojiAsset(def));
@@ -231,7 +235,7 @@ export async function initEmojis(client) {
           buf = Buffer.from(await resp.arrayBuffer());
           mime = `image/${def.animated ? 'gif' : 'png'}`;
         }
-        if (!def.asset && !def.inline) {
+        if (!def.asset && !def.inline && !def.generated) {
           ({ buffer: buf, mime } = await prepareEmojiAsset(buf, mime, def.animated));
         }
         const b64 = `data:${mime};base64,${buf.toString('base64')}`;
