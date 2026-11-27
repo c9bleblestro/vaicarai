@@ -7,6 +7,7 @@ import {getEmoji} from '../../utils/emojiManager.js';
 import {buildPetPanel,petDisplayName,resolvePetEmoji} from '../../utils/petComponents.js';
 import {getPetWorld,changePetWorld,petStats,petLevel,petMood,petCooldown,ROOM_THEMES,CARE_ACTIONS} from '../../utils/petLife.js';
 import {renderPetWorld} from '../../utils/petWorldArt.js';
+import {illustratedPetKey} from '../../utils/petIllustrationPack.js';
 const coin=()=>getEmoji('futecoins');
 const flags=MessageFlags.IsComponentsV2;
 const privateFlag=MessageFlags.Ephemeral;
@@ -43,7 +44,7 @@ export async function buildWorldPayload(world,{owner,guild,view='room',action='i
   else if(action==='idle'&&mood==='Sonolento')action='dormir';
   const artPet={...pet,emoji:resolvePetEmoji(pet.emoji,guild)};
   let art;
-  try{art=await renderPetWorld(artPet,{theme:life.room,view,action});}catch(error){console.warn('[PET WORLD]',error?.message??error);}
+  try{if(action!=='away'||!illustratedPetKey(pet.id))art=await renderPetWorld(artPet,{theme:life.room,view,action});}catch(error){console.warn('[PET WORLD]',error?.message??error);}
   const container=new ContainerBuilder();
   const top='## '+petDisplayName(pet,guild)+' · '+(view==='room'?'Meu quartinho':'Meu pet')+'\n'+
     '**Nível '+lvl.level+'** · '+lvl.stage+' · '+mood+'\n-# '+lvl.current+' / '+lvl.needed+' XP';
@@ -68,7 +69,7 @@ export async function buildWorldPayload(world,{owner,guild,view='room',action='i
   const info=(notice?'**'+notice+'**\n\n':'')+statText+'\n\n'+
     '**Aventura:** '+adventure+'\n**Quarto:** '+(ROOM_THEMES[life.room]?.name??'Neon')+'\n-# '+cooldowns+
     (art&&!art.sourceFound&&pet.imageUrl?'\n-# A imagem original não pôde ser carregada; representação alternativa.':'')+
-    (art?.ext==='png'?'\n-# Animação indisponível nesta tentativa.':'');
+    (art?.ext==='png'||(!art&&action!=='away')?'\n-# Animação indisponível nesta tentativa.':'');
   container.addTextDisplayComponents(new TextDisplayBuilder().setContent(info));
   const disabled=k=>away||petCooldown(life,eco,k,now)>0;
   const rows=[
