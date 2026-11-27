@@ -143,7 +143,7 @@ export function drawProfileEffect(ctx,appearance,phase){
   // Efeitos ficam na margem ou no entorno da foto, nunca sobre os dados.
   ctx.save();ctx.fillStyle=t.accent;
   if(a.effect==='sparkle'){
-    for(let i=0;i<12;i++){const ang=i*tau/12+phase*tau;const x=120+Math.cos(ang)*84,y=159+Math.sin(ang)*84;ctx.globalAlpha=.25+.65*(.5+.5*Math.sin(ang*2));star(ctx,x,y,3+2*(.5+.5*Math.cos(ang)));}
+    for(let i=0;i<7;i++){const ang=i*tau/7+phase*tau;const x=120+Math.cos(ang)*84,y=159+Math.sin(ang)*84;ctx.globalAlpha=.25+.65*(.5+.5*Math.sin(ang*2));star(ctx,x,y,3+2*(.5+.5*Math.cos(ang)));}
   }else for(let i=0;i<9;i++){
     const x=i%2?786-(i%3)*3:12+(i%3)*3;
     const y=20+((i/9+phase)%1)*560;
