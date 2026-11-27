@@ -1,4 +1,5 @@
 import {createCanvas,loadImage} from '@napi-rs/canvas';
+import {ECONOMY_COSMETICS} from './economyProgress.js';
 
 export const PROFILE_THEMES={
   rose:{name:'Rosa noturno',bg:['#211520','#382233'],panel:'#382733',accent:'#f3a0c5',light:'#ffe0ed'},
@@ -10,7 +11,7 @@ export const PROFILE_THEMES={
   classic:{name:'Clássico',bg:['#202124','#2b2d30'],panel:'#1c1e21',accent:'#bd42ef',light:'#ffffff'}
 };
 export const PROFILE_EFFECTS={off:'Desativada (PNG)',banner:'Somente banner GIF',sparkle:'Brilhos e ícones animados',petals:'Pétalas flutuantes',hearts:'Corações flutuantes',dream:'Sonho — brilho, estrelas e pétalas',aurora:'Aurora — luz em movimento'};
-export const PROFILE_DECORS={floral:'Flores delicadas',cat:'Gatinho',stars:'Estrelas',bow:'Laços',none:'Minimalista'};
+export const PROFILE_DECORS={floral:'Flores delicadas',cat:'Gatinho',stars:'Estrelas',bow:'Laços',none:'Minimalista',...ECONOMY_COSMETICS};
 export function normalizeAppearance(value={}){
   value=value??{};
   const pick=(key,options,fallback)=>typeof key==='string'&&Object.hasOwn(options,key)?key:fallback;
@@ -48,6 +49,17 @@ function cat(ctx,x,y,r,accent,light){
 }
 function decorations(ctx,decor,t){
   if(decor==='none')return;
+  if(decor.startsWith('eco_')){
+    ctx.save();
+    const gold=decor==='eco_gold'||decor==='eco_crown',c=gold?'#ffdc89':'#e5e9ff';
+    for(const [x,y] of [[22,22],[778,22],[22,578],[778,578]]){
+      if(decor==='eco_blossom')flower(ctx,x,y,14,'#ed90ba','#ffe4f3');
+      else if(decor==='eco_pearl'){for(let i=0;i<4;i++){const g=ctx.createRadialGradient(x+i*4-6,y-4,1,x+i*4-6,y,8);g.addColorStop(0,'#ffffff');g.addColorStop(1,'#b4a4d4');ctx.fillStyle=g;ctx.beginPath();ctx.arc(x+i*4-6,y,5,0,tau);ctx.fill();}}
+      else{ctx.fillStyle=c;star(ctx,x,y,11);star(ctx,x+(x<400?17:-17),y+(y<300?12:-12),5);}
+    }
+    if(decor==='eco_crown'){ctx.fillStyle='#ffdc89';ctx.beginPath();ctx.moveTo(640,44);ctx.lineTo(638,23);ctx.lineTo(651,33);ctx.lineTo(659,18);ctx.lineTo(668,33);ctx.lineTo(681,23);ctx.lineTo(678,44);ctx.closePath();ctx.fill();}
+    ctx.restore();return;
+  }
   ctx.save();
   if(decor==='floral'){
     ctx.strokeStyle=t.accent;ctx.globalAlpha=.6;ctx.lineWidth=1.2;
