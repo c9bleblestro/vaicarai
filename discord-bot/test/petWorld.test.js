@@ -7,7 +7,7 @@ import prisma from '../src/database/client.js';
 import {getPetWorld,changePetWorld,petStats,petLevel,petCooldown,MINUTE} from '../src/utils/petLife.js';
 import {decodePetSprite,renderPetWorld,petMotionPlan,ILLUSTRATED_ACTIONS,ACTION_DURATION} from '../src/utils/petWorldArt.js';
 import {buildWorldPayload} from '../src/commands/general/pet.js';
-import {getPetIllustration,getPetMotionSource,validatePetIllustrations,getPimentinhaClip} from '../src/utils/petIllustrationPack.js';
+import {getPetIllustration,getPetMotionSource,validatePetIllustrations,getPimentinhaClip,getApprovedIdle} from '../src/utils/petIllustrationPack.js';
 import {migratePetCatalogForGuild} from '../src/utils/petCatalogV2.js';
 const sample={careAt:new Date(100000),fullness:90,happiness:90,energy:90,hygiene:90,bond:10};
 test('life decay is bounded, persistent bond and levels are independent',()=>{
@@ -203,4 +203,19 @@ test('adding Pimentinha to existing guild does not alter previous pets, balances
     await prisma.pet.deleteMany({where:{guildId}});
     await prisma.$disconnect();
   }
+});
+
+test('approved media pack overrides only the five verified idle clips when present',async()=>{
+  const keys=['luna:portrait','luna:room','koda:portrait','pimentinha:portrait','pimentinha:room'];
+  const clips=keys.map(getApprovedIdle);
+  assert.ok(clips.every(Boolean)||clips.every(x=>x===null));
+  if(!clips[0])return;
+  for(let i=0;i<keys.length;i++){
+    const [species,view]=keys[i].split(':');
+    const pet={id:'pw2-'+species+'-test'};
+    assert.deepEqual(getPetIllustration(pet.id,view),clips[i]);
+    const art=await renderPetWorld(pet,{view,theme:'neon',action:'idle'});
+    assert.deepEqual(art.buffer,clips[i]);
+  }
+  assert.equal(getApprovedIdle('koda:room'),null);
 });

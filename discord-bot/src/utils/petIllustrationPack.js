@@ -22,10 +22,47 @@ const PIMENTINHA_FILES=Object.freeze({
   'room-acariciar':'0e81bfc11533f334d1dd7d3de3da155fd3499f47e8c6d16c6273cbe20030a7c2',
   'room-dormir':'9ab773d0b5dabc1301616ab7d67db9f0db2b34efde25b3e2d730b657074b2f6c'
 });
+// Optional approved media pack. No generated substitute is permitted.
+// Original motion sources and action-specific clips are kept independently.
+const APPROVED_IDLE=Object.freeze({
+  'luna:portrait':['d7740e5c367694aa41fce596de4826cc3da4d882baa9c71003a898415d2af53e',313,313,4800,401019],
+  'luna:room':['5b6bb0bd1e21e229f273e9441fbaff135e17c3bbabdc9e7cdf1d48f339d44c4b',367,251,4800,641648],
+  'koda:portrait':['132d6a405457fa8590f4ef4b5a99184d56bc49dcfc1d0be1e5f307c24e324733',313,313,4800,440048],
+  'pimentinha:portrait':['9d8e4ba354cb28a23e2a7039bff9ef57fbe2126f617451f2830bb10321044c10',313,313,4800,451986],
+  'pimentinha:room':['176cdd3fcff1c841339b4ceaf5107d3748d9f846a077918ac9844b8e3b2d0566',537,390,3000,1868279]
+});
+let approvedIdle;
+export function getApprovedIdle(key){
+  if(!approvedIdle){
+    let raw;
+    try{raw=readFileSync(new URL('../assets/pet-world/approved-animations.json.gz',import.meta.url));}
+    catch(error){if(error.code!=='ENOENT')throw error;}
+    const next=new Map();
+    if(raw){
+      const data=JSON.parse(gunzipSync(raw,{maxOutputLength:8*1024*1024}).toString('utf8'));
+      for(const [id,[hash,w,h,duration,size]] of Object.entries(APPROVED_IDLE)){
+        if(typeof data[id]!=='string')throw Error('Missing approved GIF: '+id);
+        const b=Buffer.from(data[id],'base64');
+        if(b.length!==size||createHash('sha256').update(b).digest('hex')!==hash)throw Error('Approved GIF checksum mismatch: '+id);
+        const parsed=parseGIF(b.buffer.slice(b.byteOffset,b.byteOffset+b.byteLength));
+        const frames=decompressFrames(parsed,false);
+        if(parsed.lsd.width!==w||parsed.lsd.height!==h||frames.length!==16||frames.reduce((sum,f)=>sum+f.delay,0)!==duration)throw Error('Invalid approved GIF: '+id);
+        next.set(id,b);
+      }
+    }
+    approvedIdle=next;
+  }
+  return approvedIdle.get(key)??null;
+}
+
 const pimentinhaCache=new Map();
 export function getPimentinhaClip(view='room',action='idle'){
   const key=view==='portrait'?'portrait-idle':Object.hasOwn(PIMENTINHA_FILES,'room-'+action)?'room-'+action:'room-idle';
   if(pimentinhaCache.has(key))return pimentinhaCache.get(key);
+  if(key==='portrait-idle'||key==='room-idle'){
+    const approved=getApprovedIdle('pimentinha:'+view);
+    if(approved){pimentinhaCache.set(key,approved);return approved;}
+  }
   // Use only the exact approved composite, without re-encoding or redrawing.
   // Keep the previous clip until the approved binary is present.
   if(key==='room-idle'){
@@ -171,7 +208,8 @@ export function getPetIllustration(id,view='room'){
   const key=illustratedPetKey(id);
   if(!key)return null;
   if(key==='pimentinha')return getPimentinhaClip(view);
-  return loadPack().get(key+':'+(view==='portrait'?'portrait':'room'))??null;
+  const name=key+':'+(view==='portrait'?'portrait':'room');
+  return getApprovedIdle(name)??loadPack().get(name)??null;
 }
 
 export function getPetMotionSource(id,view='room'){
