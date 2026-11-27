@@ -20,6 +20,9 @@
         "...",
         "python3 -m venv .venv",
         "PIP_USER=0 .venv/bin/python -m pip install --no-cache-dir --no-user -r requirements.txt",
+        "mkdir -p vendor/fm-extractor",
+        "PIP_USER=0 .venv/bin/python -m pip install --no-cache-dir --no-user --target vendor/fm-extractor 'yt-dlp[default]'",
+        "PYTHONPATH=vendor/fm-extractor python3 -m yt_dlp --version",
         "mkdir -p data/tts/chatterbox-cache",
         "npx prisma generate",
         "mkdir -p /var/fonts",
@@ -31,7 +34,15 @@
     }
   },
   "deploy": {
-    "inputs": ["..."],
+    "inputs": [
+      "...",
+      {
+        "step": "build",
+        "include": [
+          "/app/vendor/fm-extractor/**"
+        ]
+      }
+    ],
     "aptPackages": [
       "ffmpeg",
       "fonts-dejavu-core",

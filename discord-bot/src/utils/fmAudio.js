@@ -6,6 +6,8 @@ import { createAudioResource, StreamType } from '@discordjs/voice';
 import { isVoiceConfigured, textToSpeech } from './voiceAiManager.js';
 
 const localYtdlp=fileURLToPath(new URL('../../.venv/bin/yt-dlp',import.meta.url));
+const vendorDir=fileURLToPath(new URL('../../vendor/fm-extractor/',import.meta.url));
+const runFile=promisify(execFile);
 const youtubeHosts=['youtube.com','www.youtube.com','m.youtube.com','music.youtube.com','youtu.be'];
 const soundcloudHosts=['soundcloud.com','www.soundcloud.com','m.soundcloud.com'];
 export function trackPlatform(value){
@@ -28,14 +30,53 @@ export function validQuery(value){
   if(!q||q.length>250)return false;
   return /[a-z][a-z0-9+.-]*:\/\//i.test(q)?Boolean(trackPlatform(q)):true;
 }
-export function ytdlpExecutable(){return process.env.YT_DLP_PATH||(existsSync(localYtdlp)?localYtdlp:'yt-dlp');}
+export function extractorInvocation(){
+  if(process.env.YT_DLP_PATH?.trim())return {command:process.env.YT_DLP_PATH.trim(),prefix:[]};
+  // Pure Python package copied into the deployed app, independent of venv shebangs.
+  if(existsSync(vendorDir+'yt_dlp/__init__.py'))return {command:'python3',prefix:['-c','import sys; sys.path.insert(0, sys.argv.pop(1)); from yt_dlp import main; main()',vendorDir]};
+  return {command:existsSync(localYtdlp)?localYtdlp:'yt-dlp',prefix:[]};
+}
+export function ytdlpExecutable(){return extractorInvocation().command;}
+export function extractorFailure(error){
+  const detail=String(error?.stderr||error?.message||'').toLowerCase();
+  if(error?.code==='ENOENT'||/no module named yt_dlp|bad interpreter/.test(detail))return 'EXTRACTOR_MISSING';
+  if(error?.killed||error?.code==='ETIMEDOUT'||/timed out|timeout/.test(detail))return 'SOURCE_TIMEOUT';
+  if(/sign in|log in|not a bot|http error (403|429)|too many requests|login required|authentication/.test(detail))return 'SOURCE_RESTRICTED';
+  if(/no video formats|requested format is not available|no supported javascript runtime/.test(detail))return 'FORMAT_UNAVAILABLE';
+  return 'SOURCE_UNAVAILABLE';
+}
+export function fmSourceError(code){
+  const messages={
+    EXTRACTOR_MISSING:'O reprodutor de músicas não está instalado no ambiente da rádio. A administração pode conferir /fm diagnostico.',
+    SOURCE_TIMEOUT:'A fonte de áudio demorou demais para responder. Tente novamente.',
+    SOURCE_RESTRICTED:'A plataforma não autorizou a reprodução pelo servidor. Tente uma versão pública no SoundCloud.',
+    FORMAT_UNAVAILABLE:'A fonte não forneceu um formato de áudio compatível.',
+    SOURCE_UNAVAILABLE:'Essa faixa está indisponível para a rádio. Tente outro link público ou pesquise pelo nome e artista.',
+  };
+  const e=new Error(messages[code]||messages.SOURCE_UNAVAILABLE);e.code=code;return e;
+}
+export async function checkFmRuntime(){
+  const {command,prefix}=extractorInvocation();
+  const checks=await Promise.allSettled([
+    runFile(command,[...prefix,'--version'],{timeout:5000,maxBuffer:65536}),
+    runFile(process.env.FFMPEG_PATH||'ffmpeg',['-version'],{timeout:5000,maxBuffer:65536}),
+  ]);
+  return {extractor:checks[0].status==='fulfilled'?checks[0].value.stdout.trim().slice(0,80):null,
+    ffmpeg:checks[1].status==='fulfilled'?checks[1].value.stdout.split('\n')[0].slice(0,100):null};
+}
 export async function readTrackMetadata(query){
   if(!validTrackUrl(query)&&!/^ytsearch1:[^\r\n]{1,250}$/.test(query))throw new Error('Fonte inválida.');
-  const {stdout}=await promisify(execFile)(ytdlpExecutable(),[
-    '--ignore-config','--no-playlist','--skip-download','--no-warnings','--socket-timeout','8',
-    '--dump-single-json','--format','bestaudio/best','--',query,
-  ],{timeout:18000,maxBuffer:2*1024*1024,killSignal:'SIGKILL'});
-  const data=JSON.parse(stdout);
+  const {command,prefix}=extractorInvocation();
+  let stdout;
+  try{
+    ({stdout}=await runFile(command,[...prefix,
+      '--ignore-config','--no-playlist','--skip-download','--no-warnings','--socket-timeout','8',
+      '--js-runtimes','node','--dump-single-json','--format','bestaudio/best','--',query,
+    ],{timeout:18000,maxBuffer:4*1024*1024,killSignal:'SIGKILL'}));
+  }catch(error){
+    const code=extractorFailure(error);console.warn('[FM METADATA]',trackPlatform(query)||'search',code);throw fmSourceError(code);
+  }
+  let data;try{data=JSON.parse(stdout);}catch{throw fmSourceError('SOURCE_UNAVAILABLE');}
   const track=Array.isArray(data.entries)?data.entries[0]:data;
   if(!track||!validTrackUrl(track.webpage_url)||track.is_live||track.live_status==='is_live'||track.availability==='private'||track.availability==='subscriber_only'||track.availability==='premium_only'||track.availability==='needs_auth')throw new Error('Faixa indisponível para reprodução.');
   const seconds=Math.floor(Number(track.duration)||0);
@@ -67,11 +108,14 @@ function managed(proc,children=[]){
 export function openStation(url){return managed(ffmpeg(url,true));}
 export function openTrack(url){
   if(!validTrackUrl(url))throw new Error('Fonte de áudio não compatível.');
-  const dl=makeProcess(ytdlpExecutable(),[
-    '--ignore-config','--no-playlist','--no-warnings','--socket-timeout','15','--format','bestaudio/best','-o','-','--',url,
+  const {command,prefix}=extractorInvocation();
+  const dl=makeProcess(command,[...prefix,
+    '--ignore-config','--no-playlist','--no-warnings','--socket-timeout','15','--js-runtimes','node','--format','bestaudio/best','-o','-','--',url,
   ],['ignore','pipe','pipe']);
   const ff=ffmpeg('pipe:0');dl.stdout.pipe(ff.stdin);
-  dl.on('close',()=>{try{ff.stdin.end();}catch{}});
+  let diagnostic='';dl.stderr.on('data',chunk=>{diagnostic=(diagnostic+chunk.toString()).slice(-4096);});
+  dl.on('error',e=>console.warn('[FM AUDIO]',extractorFailure(e)));
+  dl.on('close',code=>{if(code&&code!==null)console.warn('[FM AUDIO]',trackPlatform(url),extractorFailure({stderr:diagnostic}));try{ff.stdin.end();}catch{}});
   return managed(ff,[dl]);
 }
 export function speechText(item){

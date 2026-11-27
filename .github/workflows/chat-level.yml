@@ -36,6 +36,10 @@ jobs:
         run: npm install --no-audit --no-fund
       - name: Install audio test tools
         run: sudo apt-get update -qq && sudo apt-get install -y -qq ffmpeg espeak-ng
+      - name: Install FM extractor as in Railway runtime
+        run: |
+          python3 -m pip install --target vendor/fm-extractor 'yt-dlp[default]'
+          node --input-type=module -e "import {checkFmRuntime} from './src/utils/fmAudio.js'; const r=await checkFmRuntime(); console.log(r); if(!r.extractor||!r.ffmpeg)process.exit(1);"
       - name: Validate Prisma and generate client
         run: npx prisma validate && npx prisma generate
       - name: Check syntax

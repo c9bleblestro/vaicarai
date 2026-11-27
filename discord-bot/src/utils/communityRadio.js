@@ -69,7 +69,7 @@ export function buildFmPanel(session){
   const ratio=total>0&&session.phase==='track'?Math.min(1,elapsed/total):0;
   const filled=Math.round(ratio*14);
   const details=item
-    ? '-# '+(session.phase==='announcement'?'LOCUÇÃO • PRÓXIMA MÚSICA':'PEDIDO DA COMUNIDADE')+'\n**'+md(track.title,180)+'**\n'+md(track.uploader||'Artista não informado',120)+(track.album?'\n-# Álbum: '+md(track.album,120):'')+'\n-# Fonte: '+(track.platform==='youtube'?'YouTube':'SoundCloud')+'\n'+(total?'\n'+(session.phase==='track'?'▰'.repeat(filled)+'▱'.repeat(14-filled)+'  '+time(Math.min(elapsed,total))+' / '+track.duration:'Duração: '+track.duration):'')
+    ? '-# '+(session.phase==='announcement'?'LOCUÇÃO • PRÓXIMA MÚSICA':'PEDIDO DA COMUNIDADE')+'\n**'+md(track.title,180)+'**\n'+md(track.uploader||'Artista não informado',120)+(track.album?'\n-# Álbum: '+md(track.album,120):'')+'\n-# Fonte: '+(track.platform==='youtube'?'YouTube':'SoundCloud')+(track.sourceFallback?' · versão correspondente ao link solicitado':'')+'\n'+(total?'\n'+(session.phase==='track'?'▰'.repeat(filled)+'▱'.repeat(14-filled)+'  '+time(Math.min(elapsed,total))+' / '+track.duration:'Duração: '+track.duration):'')
     : '-# PROGRAMAÇÃO AO VIVO\n**'+md(station?.name||'Substancy FM')+'**\n'+md(station?.genre||'Programação contínua')+'\n-# Transmissão de estação • faixas individuais não identificadas';
   c.addTextDisplayComponents(text(details));
   if(item){
@@ -145,12 +145,12 @@ export class CommunityRadioSession {
     if(this.requestTimes.size>1000)for(const [id,t] of this.requestTimes)if(Date.now()-t>60000)this.requestTimes.delete(id);
     try{
       let info;
-      try{info=await timeout(resolveFmTrack(query.trim()),65000);}catch(error){throw new Error(error?.message||'Não encontrei uma faixa disponível. Tente outro nome ou link.');}
+      try{info=await timeout(resolveFmTrack(query.trim()),85000);}catch(error){throw new Error(error?.message||'Não encontrei uma faixa disponível. Tente outro nome ou link.');}
       if(!validTrackUrl(info.url))throw new Error('A busca não retornou uma fonte de áudio compatível.');
       if(durationSeconds(info.duration)>900)throw new Error('Escolha uma faixa de até 15 minutos.');
       const item={id:randomUUID(),requesterId:userId,requesterName:clip(name,80),recipientName:recipientName?clip(recipientName,80):null,
         anonymous:Boolean(anonymous),message:clip(message,240),createdAt:Date.now(),votes:[],
-        track:{title:clip(info.title||'Música',180),uploader:clip(info.uploader||'Artista não informado',120),duration:clip(info.duration,20),album:info.album?clip(info.album,150):null,artwork:safeArtworkUrl(info.artwork),thumbnail:safeArtworkUrl(info.thumbnail),platform:info.platform,url:info.url}};
+        track:{title:clip(info.title||'Música',180),uploader:clip(info.uploader||'Artista não informado',120),duration:clip(info.duration,20),album:info.album?clip(info.album,150):null,artwork:safeArtworkUrl(info.artwork),thumbnail:safeArtworkUrl(info.thumbnail),platform:info.platform,sourceFallback:Boolean(info.sourceFallback),requestedPlatform:info.requestedPlatform??null,url:info.url}};
       await this.mutateQueue(q=>{checkQueueLimit(q,userId);return {queue:[...q,item],value:item};});
       if(this.phase==='station')this.interrupt('request');
       this.refresh();return item;
