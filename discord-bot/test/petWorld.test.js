@@ -4,9 +4,9 @@ import {createCanvas,loadImage,GifEncoder} from '@napi-rs/canvas';
 import {parseGIF,decompressFrames} from 'gifuct-js';
 import prisma from '../src/database/client.js';
 import {getPetWorld,changePetWorld,petStats,petLevel,petCooldown,MINUTE} from '../src/utils/petLife.js';
-import {decodePetSprite,renderPetWorld} from '../src/utils/petWorldArt.js';
+import {decodePetSprite,renderPetWorld,petMotionPlan,ILLUSTRATED_ACTIONS,ACTION_DURATION} from '../src/utils/petWorldArt.js';
 import {buildWorldPayload} from '../src/commands/general/pet.js';
-import {getPetIllustration,validatePetIllustrations} from '../src/utils/petIllustrationPack.js';
+import {getPetIllustration,getPetMotionSource,validatePetIllustrations} from '../src/utils/petIllustrationPack.js';
 import {migratePetCatalogForGuild} from '../src/utils/petCatalogV2.js';
 const sample={careAt:new Date(100000),fullness:90,happiness:90,energy:90,hygiene:90,bond:10};
 test('life decay is bounded, persistent bond and levels are independent',()=>{
@@ -130,4 +130,26 @@ test('portrait and room stay distinct; away panel retains a real GIF',async()=>{
     assert.deepEqual(payload.files[0].attachment,getPetIllustration(pet.id,'room'));
     assert.ok(JSON.stringify(payload.components.map(c=>c.toJSON())).includes('attachment://pet-world.gif'));
   }
+});
+
+test('all illustrated timelines close the loop and fit a complete 5.6s action',async()=>{
+  for(const species of ['luna','koda'])for(const view of ['portrait','room']){
+    const pet={id:'pw2-'+species+'-test'};
+    const source=await decodePetSprite(getPetMotionSource(pet.id,view));
+    for(const action of ILLUSTRATED_ACTIONS){
+      const plan=petMotionPlan(species,view,action);
+      assert.equal(plan.reduce((sum,f)=>sum+f.delay,0),ACTION_DURATION);
+      assert.equal(plan[0].index,plan.at(-1).index);
+      assert.ok(plan.every(f=>f.index>=0&&f.index<source.length));
+    }
+  }
+});
+test('same species uses one cached reaction across guilds; real themed room returns a GIF',async()=>{
+  const options={view:'room',theme:'moon',action:'brincar'};
+  const [a,b]=await Promise.all(['one','two'].map(guild=>renderPetWorld({id:'pw2-luna-'+guild},options)));
+  assert.equal(a.fallback,undefined);
+  assert.deepEqual(a.buffer,b.buffer);
+  const frames=await decodePetSprite(a.buffer);
+  assert.ok(frames.length>=8);
+  assert.ok(frames.reduce((s,f)=>s+f.delay,0)>=5500);
 });
