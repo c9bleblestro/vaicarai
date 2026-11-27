@@ -39,7 +39,7 @@ export async function activeCompanion(userId,guildId,db=prisma){
     db.pet.findUnique({where:{id:profile.activePet}}),
     db.userPurchase.findUnique({where:{userId_itemType_itemRef:{userId,itemType:'pet',itemRef:profile.activePet}}})
   ]);
-  if(!pet||!owned)return null;
+  if(!pet?.active||!owned)return null;
   return pet;
 }
 const keyFor=(userId,guildId,petId)=>({userId_guildId_petId:{userId,guildId,petId}});

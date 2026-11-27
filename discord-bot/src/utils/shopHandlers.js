@@ -34,6 +34,7 @@ import {
 import { ROBBERY_WEAPONS, getRobberyWeapon } from './robberyData.js';
 import { renderRingPreview } from './ringPreview.js';
 import { buildPetPanel, petDisplayName } from './petComponents.js';
+import {getPetIllustration} from './petIllustrationPack.js';
 import { spendCoins, totalCoins } from './economyFunds.js';
 
 const SHOP_COLOR = 0x000000;
@@ -1386,6 +1387,8 @@ async function buildPetCarousel(p, index, total, eco, owned, cfg = null, emojiSo
   const styles    = getBtnStyles(cfg);
   const canAfford = totalCoins(eco) >= p.price;
   const imageUrl  = safeHttpUrl(p.imageUrl);
+  const illustration=includeImage?getPetIllustration(p.id,'portrait'):null;
+  const files=illustration?[new AttachmentBuilder(illustration,{name:'companheiro.gif'})]:[];
 
   const c = new ContainerBuilder();
   c.addTextDisplayComponents(new TextDisplayBuilder().setContent([
@@ -1395,10 +1398,9 @@ async function buildPetCarousel(p, index, total, eco, owned, cfg = null, emojiSo
     `${PET_BALANCE()} Saldo: **${totalCoins(eco).toLocaleString('pt-BR')} ${COIN()}**`,
   ].filter(Boolean).join('\n')));
 
-  if (includeImage && imageUrl) {
-    const { MediaGalleryBuilder, MediaGalleryItemBuilder } = await import('discord.js');
+  if (includeImage && (illustration||imageUrl)) {
     c.addMediaGalleryComponents(
-      new MediaGalleryBuilder().addItems(new MediaGalleryItemBuilder().setURL(imageUrl)),
+      new MediaGalleryBuilder().addItems(new MediaGalleryItemBuilder().setURL(illustration?'attachment://companheiro.gif':imageUrl)),
     );
   }
 
@@ -1431,6 +1433,8 @@ async function buildPetCarousel(p, index, total, eco, owned, cfg = null, emojiSo
       new ActionRowBuilder().addComponents(voltarBtn),
     ],
     flags: MessageFlags.IsComponentsV2,
+    files,
+    attachments:[],
   };
 }
 
@@ -1440,7 +1444,7 @@ async function editPetCarousel(interaction, p, index, total, eco, owned, cfg = n
   try {
     return await interaction.editReply(payload);
   } catch (error) {
-    if (!safeHttpUrl(p.imageUrl)) throw error;
+    if (!safeHttpUrl(p.imageUrl)&&!getPetIllustration(p.id,'portrait')) throw error;
     return interaction.editReply(
       await buildPetCarousel(p, index, total, eco, owned, cfg, interaction.guild, { includeImage: false }),
     );
@@ -1750,7 +1754,7 @@ async function handleItemSel(interaction) {
 
   if (itemType === 'pet') {
     const pet = await prisma.pet.findUnique({ where: { id: ref } });
-    if (!pet) return interaction.editReply({
+    if (!pet?.active||pet.guildId!==interaction.guildId) return interaction.editReply({
       components: [new ContainerBuilder().addTextDisplayComponents(new TextDisplayBuilder().setContent('❌ Pet não encontrado.'))],
       flags: MessageFlags.IsComponentsV2,
     });
@@ -1800,7 +1804,7 @@ async function handleBuyConfirm(interaction) {
     name = item.name; price = item.price;
   } else if (type === 'pet') {
     petForPayload = await prisma.pet.findUnique({ where: { id: key } });
-    if (!petForPayload) return interaction.editReply({
+    if (!petForPayload?.active||petForPayload.guildId!==interaction.guildId) return interaction.editReply({
       ...buildPetPanel({
         title: '❌ Pet não encontrado',
         body: 'Esse pet não está mais disponível na loja. Abra a loja novamente para atualizar a lista.',
@@ -1888,7 +1892,7 @@ async function handleBuyExecute(interaction, client) {
     name = item.name; price = item.price; itemRef = item.roleId; roleId = item.roleId;
   } else if (type === 'pet') {
     petForPayload = await prisma.pet.findUnique({ where: { id: key } });
-    if (!petForPayload) return interaction.editReply({
+    if (!petForPayload?.active||petForPayload.guildId!==interaction.guildId) return interaction.editReply({
       components: [new ContainerBuilder().addTextDisplayComponents(new TextDisplayBuilder().setContent('❌ Pet não encontrado.'))],
       flags: MessageFlags.IsComponentsV2,
     });
@@ -2583,7 +2587,7 @@ async function handleProfilePetBtn(interaction) {
   }
 
   const petIds  = owned.map(o => o.itemRef);
-  const pets    = await prisma.pet.findMany({ where: { id: { in: petIds } } });
+  const pets    = await prisma.pet.findMany({ where: { id: { in: petIds },active:true,guildId:interaction.guildId } });
 
   const opts = [
     new StringSelectMenuOptionBuilder().setLabel('🚫 Remover pet').setValue('none').setDescription('Não exibir nenhum pet no perfil').setEmoji('🚫'),
@@ -2633,7 +2637,8 @@ async function handleProfilePetSel(interaction) {
         },
       },
     });
-    if (!owned) {
+    const available=await prisma.pet.findFirst({where:{id:activePet,active:true,guildId:interaction.guildId}});
+    if (!owned||!available) {
       return interaction.editReply(buildPetPanel({
         title: '❌ Pet indisponível',
         body: 'Esse pet não está mais no seu inventário. Abra o menu novamente para atualizar a lista.',

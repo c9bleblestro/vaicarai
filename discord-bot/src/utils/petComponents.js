@@ -7,8 +7,10 @@ import {
   SectionBuilder,
   TextDisplayBuilder,
   ThumbnailBuilder,
+  MediaGalleryBuilder, MediaGalleryItemBuilder, AttachmentBuilder,
 } from 'discord.js';
 import { getEmoji } from './emojiManager.js';
+import {getPetIllustration} from './petIllustrationPack.js';
 
 const PET_HEART = () => getEmoji('pet_heart');
 const PET_TIME  = () => getEmoji('pet_time');
@@ -134,8 +136,13 @@ export function buildPetPanel({
   const container = new ContainerBuilder();
   const text = new TextDisplayBuilder().setContent(`## ${title}\n\n${body}`);
   const thumbnailUrl = petThumbnailUrl(pet);
+  const illustration=getPetIllustration(pet?.id,'portrait');
+  const files=illustration?[new AttachmentBuilder(illustration,{name:'companheiro.gif'})]:[];
 
-  if (thumbnailUrl) {
+  if(illustration){
+    container.addTextDisplayComponents(text);
+    container.addMediaGalleryComponents(new MediaGalleryBuilder().addItems(new MediaGalleryItemBuilder().setURL('attachment://companheiro.gif')));
+  }else if (thumbnailUrl) {
     container.addSectionComponents(
       new SectionBuilder()
         .addTextDisplayComponents(text)
@@ -152,5 +159,6 @@ export function buildPetPanel({
       ...extraRows,
     ],
     flags: MessageFlags.IsComponentsV2,
+    files,
   };
 }
