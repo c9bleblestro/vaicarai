@@ -4,7 +4,7 @@ import prisma from '../database/client.js';
 const button=(id,icon,label)=>{const b=new ButtonBuilder().setCustomId(id).setStyle(ButtonStyle.Secondary).setEmoji(getEmoji(icon));if(label!==undefined)b.setLabel(String(label));return b;};
 export function buildInstaPost({postId,authorId,content='',imageUrl,likes=0,dislikes=0}){
  const c=new ContainerBuilder().setAccentColor(0xffffff);
- c.addTextDisplayComponents(new TextDisplayBuilder().setContent(getEmoji('insta_white_header')+' **postador por:** <@'+authorId+'>'+(content?'\n'+content:'')));
+ c.addTextDisplayComponents(new TextDisplayBuilder().setContent(getEmoji('insta_header_motion')+' **postador por:** <@'+authorId+'>'+(content?'\n'+content:'')));
  c.addSeparatorComponents(new SeparatorBuilder());
  c.addMediaGalleryComponents(new MediaGalleryBuilder().addItems(new MediaGalleryItemBuilder().setURL(imageUrl)));
  c.addSeparatorComponents(new SeparatorBuilder());
@@ -28,6 +28,10 @@ export async function toggleInstaVote(postId,userId,vote,db=prisma){
 }
 export function updateInstaCounts(components,postId,counts){
  const walk=c=>{const next={...(typeof c.toJSON==='function'?c.toJSON():c)};
+ if(next.type===10&&typeof next.content==='string'&&next.content.includes(' **postador por:**')){
+  const animated=getEmoji('insta_header_motion');
+  if(animated.startsWith('<a:'))next.content=next.content.replace(/^<:insta_white_header:\d+>(?= \*\*postador por:\*\*)/,animated);
+ }
  if(next.custom_id==='insta_v2_yes_'+postId)next.label=String(counts.yes.length);
  if(next.custom_id==='insta_v2_no_'+postId)next.label=String(counts.no.length);
  if(next.components)next.components=next.components.map(walk);return next;};
