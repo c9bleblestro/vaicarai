@@ -26,7 +26,7 @@ test('temas, decoração, assinatura e dados variáveis produzem cartões de ver
   const one=await generateProfileCard({...params,_bannerImage:banner});
   const two=await generateProfileCard({...params,_bannerImage:banner,balance:42,marriedStreak:7,appearance:{theme:'rose',decor:'bow',signature:'Minha assinatura'}});
   assert.equal(one.subarray(0,8).toString('hex'),pngHeader);
-  assert.notDeepEqual(one,two);
+  assert.ok(!one.equals(two),'cartões com dados e estilos distintos precisam mudar');
   const custom=await generateProfileCard({...params,_bannerImage:banner,cardBg1:'#11aa33',cardBg2:'#11aa33',_returnCanvas:true});
   assert.deepEqual([...custom.getContext('2d').getImageData(400,10,1,1).data],[17,170,51,255]);
 });
@@ -43,7 +43,7 @@ test('animação desligada por padrão, PNG mesmo com banner GIF, efeitos geram 
   // Effects also work without a GIF banner.
   const effect=await generateAnimatedProfileCard({...params,appearance:{theme:'rose',effect:'sparkle'},_resolvedBanner:{gradient:['#221122','#442244']}});
   const frames=framesOf(effect);
-  assert.ok(frames.length>=6);assert.notDeepEqual(Buffer.from(frames[0].patch),Buffer.from(frames[1].patch));
+  assert.ok(frames.length>=6);assert.ok(frames.some((frame,index)=>index>0&&!Buffer.from(frame.patch).equals(Buffer.from(frames[0].patch))),'GIF deve ter frames visualmente distintos');
   assert.ok(effect.length<=8*1024*1024);
 });
 test('estúdio oferece opções, valida seleção e salva somente a preferência escolhida',async()=>{
