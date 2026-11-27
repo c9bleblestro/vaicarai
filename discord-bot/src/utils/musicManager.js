@@ -86,6 +86,13 @@ async function searchSoundCloud(query) {
   return results[0];
 }
 
+// A FM usa uma lista de candidatos em vez de assumir que o primeiro resultado é a música certa.
+export async function searchSoundCloudCandidates(query,limit=8) {
+  await ensureSoundCloud();
+  const tracks=await playdl.search(query,{source:{soundcloud:'tracks'},limit});
+  return (tracks??[]).map(scToInfo);
+}
+
 // ─── getTrackInfo: resolve qualquer query → info da faixa ────────────────────
 export async function getTrackInfo(rawQuery) {
   const { platform, isSearch } = resolveQuery(rawQuery);

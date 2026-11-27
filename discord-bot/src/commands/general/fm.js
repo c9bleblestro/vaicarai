@@ -33,7 +33,7 @@ export function buildQueuePayload(s,member){
 }
 export function buildRequestModal(recipientId=null,anonymous=false){
   const modal=new ModalBuilder().setCustomId(recipientId?'fm:submit:'+recipientId+':'+(anonymous?'1':'0'):'fm:submit:request').setTitle(recipientId?'Dedicar uma música':'Pedir uma música');
-  modal.addComponents(new ActionRowBuilder().addComponents(new TextInputBuilder().setCustomId('query').setLabel('Nome da música ou link').setStyle(TextInputStyle.Short).setMaxLength(250).setRequired(true)));
+  modal.addComponents(new ActionRowBuilder().addComponents(new TextInputBuilder().setCustomId('query').setLabel('Música + artista ou link da faixa').setStyle(TextInputStyle.Short).setMaxLength(250).setRequired(true)));
   if(recipientId)modal.addComponents(new ActionRowBuilder().addComponents(new TextInputBuilder().setCustomId('message').setLabel('Recado público, lido pelo locutor (opcional)').setStyle(TextInputStyle.Paragraph).setMaxLength(240).setRequired(false)));
   return modal;
 }
@@ -106,10 +106,10 @@ const data=new SlashCommandBuilder().setName('fm').setDescription('Substancy FM 
     .addStringOption(o=>o.setName('estacao').setDescription('Programação quando a fila estiver vazia').addChoices(...stationChoices))
     .addRoleOption(o=>o.setName('dj').setDescription('Cargo autorizado a controlar a programação')))
   .addSubcommand(sub=>sub.setName('pedir').setDescription('Adiciona uma música à fila da rádio')
-    .addStringOption(o=>o.setName('musica').setDescription('Nome ou link').setMaxLength(250).setRequired(true)))
+    .addStringOption(o=>o.setName('musica').setDescription('Nome + artista ou link de faixa do YouTube, SoundCloud ou Spotify').setMaxLength(250).setRequired(true)))
   .addSubcommand(sub=>sub.setName('dedicar').setDescription('Dedica uma música a outro membro com recado público')
     .addUserOption(o=>o.setName('membro').setDescription('Quem recebe a dedicatória').setRequired(true))
-    .addStringOption(o=>o.setName('musica').setDescription('Nome ou link').setRequired(true).setMaxLength(250))
+    .addStringOption(o=>o.setName('musica').setDescription('Nome + artista ou link de faixa do YouTube, SoundCloud ou Spotify').setRequired(true).setMaxLength(250))
     .addStringOption(o=>o.setName('mensagem').setDescription('Recado público que poderá ser lido pelo locutor').setMaxLength(240))
     .addBooleanOption(o=>o.setName('anonimo').setDescription('Esconder seu nome do público')))
   .addSubcommand(sub=>sub.setName('fila').setDescription('Mostra a fila e permite votar'))

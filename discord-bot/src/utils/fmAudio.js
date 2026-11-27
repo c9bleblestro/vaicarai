@@ -1,18 +1,48 @@
-import { spawn } from 'node:child_process';
+import { spawn, execFile } from 'node:child_process';
+import { promisify } from 'node:util';
 import { existsSync } from 'node:fs';
 import { fileURLToPath } from 'node:url';
 import { createAudioResource, StreamType } from '@discordjs/voice';
 import { isVoiceConfigured, textToSpeech } from './voiceAiManager.js';
 
 const localYtdlp=fileURLToPath(new URL('../../.venv/bin/yt-dlp',import.meta.url));
-export function validTrackUrl(value){
-  try{const u=new URL(value);return u.protocol==='https:'&&['soundcloud.com','www.soundcloud.com','m.soundcloud.com'].includes(u.hostname)&&!u.username&&!u.password&&!u.port&&u.pathname.split('/').filter(Boolean).length>=2;}catch{return false;}
+const youtubeHosts=['youtube.com','www.youtube.com','m.youtube.com','music.youtube.com','youtu.be'];
+const soundcloudHosts=['soundcloud.com','www.soundcloud.com','m.soundcloud.com'];
+export function trackPlatform(value){
+  try{
+    const u=new URL(value);
+    if(u.protocol!=='https:'||u.username||u.password||u.port)return null;
+    const paths=u.pathname.split('/').filter(Boolean);
+    if(soundcloudHosts.includes(u.hostname)&&paths.length===2&&paths[1]!=='sets')return 'soundcloud';
+    if(youtubeHosts.includes(u.hostname)){
+      const id=u.hostname==='youtu.be'?paths[0]:u.pathname==='/watch'?u.searchParams.get('v'):paths[0]==='shorts'?paths[1]:null;
+      if(/^[a-zA-Z0-9_-]{11}$/.test(id??''))return 'youtube';
+    }
+    if(u.hostname==='open.spotify.com'&&paths[0]==='track'&&/^[a-zA-Z0-9]{22}$/.test(paths[1]??'')&&paths.length===2)return 'spotify';
+  }catch{}
+  return null;
 }
+export function validTrackUrl(value){return ['youtube','soundcloud'].includes(trackPlatform(value));}
 export function validQuery(value){
   const q=String(value??'').trim();
   if(!q||q.length>250)return false;
-  if(!/^[a-z][a-z0-9+.-]*:\/\//i.test(q))return !/[a-z][a-z0-9+.-]*:\/\//i.test(q);
-  try{const u=new URL(q);return u.protocol==='https:'&&!u.username&&!u.password&&!u.port&&['soundcloud.com','www.soundcloud.com','m.soundcloud.com','youtube.com','www.youtube.com','m.youtube.com','youtu.be','open.spotify.com'].includes(u.hostname);}catch{return false;}
+  return /[a-z][a-z0-9+.-]*:\/\//i.test(q)?Boolean(trackPlatform(q)):true;
+}
+export function ytdlpExecutable(){return process.env.YT_DLP_PATH||(existsSync(localYtdlp)?localYtdlp:'yt-dlp');}
+export async function readTrackMetadata(query){
+  if(!validTrackUrl(query)&&!/^ytsearch1:[^\r\n]{1,250}$/.test(query))throw new Error('Fonte inválida.');
+  const {stdout}=await promisify(execFile)(ytdlpExecutable(),[
+    '--ignore-config','--no-playlist','--skip-download','--no-warnings','--socket-timeout','8',
+    '--dump-single-json','--format','bestaudio/best','--',query,
+  ],{timeout:18000,maxBuffer:2*1024*1024,killSignal:'SIGKILL'});
+  const data=JSON.parse(stdout);
+  const track=Array.isArray(data.entries)?data.entries[0]:data;
+  if(!track||!validTrackUrl(track.webpage_url)||track.is_live||track.live_status==='is_live'||track.availability==='private'||track.availability==='subscriber_only'||track.availability==='premium_only'||track.availability==='needs_auth')throw new Error('Faixa indisponível para reprodução.');
+  const seconds=Math.floor(Number(track.duration)||0);
+  if(seconds<=0||seconds>900)throw new Error('Escolha uma faixa de até 15 minutos.');
+  return {title:track.track||track.title,uploader:track.artist||track.creator||track.uploader||'',album:track.album||null,
+    duration:Math.floor(seconds/60)+':'+String(seconds%60).padStart(2,'0'),durationSeconds:seconds,
+    thumbnail:track.thumbnail||null,url:track.webpage_url,platform:trackPlatform(track.webpage_url)};
 }
 function makeProcess(command,args,stdio){
   const p=spawn(command,args,{stdio});
@@ -37,8 +67,8 @@ function managed(proc,children=[]){
 export function openStation(url){return managed(ffmpeg(url,true));}
 export function openTrack(url){
   if(!validTrackUrl(url))throw new Error('Fonte de áudio não compatível.');
-  const dl=makeProcess(process.env.YT_DLP_PATH||(existsSync(localYtdlp)?localYtdlp:'yt-dlp'),[
-    '--no-playlist','--no-warnings','--socket-timeout','15','--format','bestaudio/best','-o','-','--',url,
+  const dl=makeProcess(ytdlpExecutable(),[
+    '--ignore-config','--no-playlist','--no-warnings','--socket-timeout','15','--format','bestaudio/best','-o','-','--',url,
   ],['ignore','pipe','pipe']);
   const ff=ffmpeg('pipe:0');dl.stdout.pipe(ff.stdin);
   dl.on('close',()=>{try{ff.stdin.end();}catch{}});
