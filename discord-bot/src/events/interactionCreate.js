@@ -106,8 +106,6 @@ import {
 } from '../utils/gameHandlers.js';
 import { handleAjudaCatSel } from '../commands/general/ajuda.js';
 import { handleFmInteraction } from '../commands/general/fm.js';
-import { radioSessions, createRadioSession } from '../utils/radioManager.js';
-import { buildControlPanel as buildRadioPanel } from '../commands/general/radio.js';
 import { musicSessions } from '../utils/musicManager.js';
 import { buildMusicPanel } from '../commands/general/musica.js';
 import {
@@ -1164,82 +1162,9 @@ export default {
           return interaction.editReply(await buildOptionDetailPanel(option));
         }
 
-        // ── RÁDIO: Selecionar playlist ──────────────────────────────────────
+        // Desativa painéis antigos sem reativar a rádio legada.
         if (interaction.customId.startsWith('radio_playlist_sel')) {
-          // Acknowledge immediately to avoid 3-second timeout
-          await interaction.deferUpdate();
-
-          const isAdmin = interaction.member.permissions.has(PermissionFlagsBits.ManageGuild);
-          if (!isAdmin) {
-            return interaction.editReply({
-              embeds: [new EmbedBuilder().setColor(0xED4245).setDescription('❌ Apenas administradores podem iniciar o rádio.')],
-              components: [],
-            });
-          }
-
-          const channelId    = interaction.customId.split(':')[1];
-          const voiceChannel = interaction.guild.channels.cache.get(channelId)
-            ?? await interaction.guild.channels.fetch(channelId).catch(() => null);
-          if (!voiceChannel) {
-            return interaction.editReply({
-              embeds: [new EmbedBuilder().setColor(0xED4245).setDescription('❌ Canal de voz não encontrado.')],
-              components: [],
-            });
-          }
-
-          // ── Verificação de permissão ANTES de tentar conectar ──────────────
-          const botMember = interaction.guild.members.me
-            ?? await interaction.guild.members.fetch(interaction.client.user.id).catch(() => null);
-          const perms = voiceChannel.permissionsFor(botMember);
-          const hasConnect = perms?.has(PermissionFlagsBits.Connect);
-          const hasSpeak   = perms?.has(PermissionFlagsBits.Speak);
-
-          if (!hasConnect || !hasSpeak) {
-            const missing = [!hasConnect && '**Conectar**', !hasSpeak && '**Falar**'].filter(Boolean).join(' e ');
-            return interaction.editReply({
-              embeds: [new EmbedBuilder().setColor(0xED4245).setDescription(
-                `❌ Sem permissão em **${voiceChannel.name}**.\n` +
-                `Dê ao bot a permissão ${missing} nesse canal e tente novamente.`
-              )],
-              components: [],
-            });
-          }
-
-          await interaction.editReply({
-            embeds: [new EmbedBuilder().setColor(0x9B4FD6).setDescription(`📻 Carregando estação e entrando em **${voiceChannel.name}**...`)],
-            components: [],
-          });
-
-          const playlistKey = interaction.values[0];
-          const session = await createRadioSession({ guild: interaction.guild, channelId: voiceChannel.id, playlistKey });
-
-          if (!session) {
-            return interaction.editReply({
-              embeds: [new EmbedBuilder().setColor(0xED4245).setDescription(
-                '❌ Falha de conexão ao canal de voz. Isso pode ser uma instabilidade temporária de rede.\n' +
-                'Tente novamente em alguns segundos. Se persistir, verifique se o bot tem permissão **Conectar** e **Falar** no canal.'
-              )],
-              components: [],
-            });
-          }
-
-          const ok = await session.start();
-          if (!ok) {
-            session.stop();
-            return interaction.editReply({
-              embeds: [new EmbedBuilder().setColor(0xED4245).setDescription('❌ Não foi possível carregar a playlist. Tente novamente em alguns segundos.')],
-              components: [],
-            });
-          }
-
-          const panel = buildRadioPanel(session);
-          const publicMsg = await interaction.channel.send(panel);
-          session.controlMessage = { channelId: publicMsg.channelId, messageId: publicMsg.id };
-
-          return interaction.editReply({
-            embeds: [new EmbedBuilder().setColor(0x57F287).setDescription(`✅ Rádio iniciado em **${voiceChannel.name}**! Painel enviado no canal.`)],
-            components: [],
-          });
+          return interaction.update({ embeds: [new EmbedBuilder().setDescription('Este painel foi descontinuado. Use /fm iniciar.')], components: [] });
         }
 
         // ── AJUDA: Seleção de categoria ─────────────────────────────────────
@@ -1586,35 +1511,8 @@ export default {
         if (customId.startsWith('mines_cashout_'))
           return handleMinesCashout(interaction, customId.replace('mines_cashout_', ''));
 
-        // ── RÁDIO: Controles do painel (admin only) ─────────────────────
         if (customId === 'radio_toggle' || customId === 'radio_stop') {
-          const isAdmin = interaction.member.permissions.has(PermissionFlagsBits.ManageGuild);
-          if (!isAdmin) {
-            return interaction.reply({
-              embeds: [new EmbedBuilder().setColor(0xED4245).setDescription('❌ Apenas administradores podem controlar o rádio.')],
-              ephemeral: true,
-            });
-          }
-
-          const session = radioSessions.get(interaction.guildId);
-          if (!session) {
-            return interaction.update({
-              embeds: [new EmbedBuilder().setColor(0xED4245).setDescription('❌ O rádio não está mais ativo.')],
-              components: [],
-            });
-          }
-
-          if (customId === 'radio_toggle') {
-            if (session.paused) session.resume(); else session.pause();
-          } else if (customId === 'radio_stop') {
-            session.stop();
-            return interaction.update({
-              embeds: [new EmbedBuilder().setColor(0xED4245).setTitle('⏹️ Rádio Encerrado').setDescription('O rádio foi parado por um administrador.')],
-              components: [],
-            });
-          }
-
-          return interaction.update(buildRadioPanel(session));
+          return interaction.update({ embeds: [new EmbedBuilder().setDescription('Este painel foi descontinuado. Use /fm painel.')], components: [] });
         }
 
         // ── MÚSICA: Controles do player ──────────────────────────────────

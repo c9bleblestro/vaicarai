@@ -113,3 +113,18 @@ test('locução local gera pacotes Opus reais sem chave externa', {skip:spawnSyn
     if(previous===undefined)delete process.env.VOICE_TTS_DISABLED;else process.env.VOICE_TTS_DISABLED=previous;
   }
 });
+
+test('comando legado de rádio removido e FM preservada',async()=>{
+  const {existsSync,readFileSync}=await import('node:fs');
+  const root=new URL('../src/',import.meta.url);
+  assert.equal(existsSync(new URL('commands/general/radio.js',root)),false);
+  const help=readFileSync(new URL('commands/general/ajuda.js',root),'utf8');
+  assert.doesNotMatch(help,/'radio'/);
+  assert.match(help,/'fm'/);
+  assert.equal(cmd.data.toJSON().name,'fm');
+  assert.ok(cmd.data.toJSON().options.some(o=>o.name==='iniciar'));
+  assert.ok(cmd.data.toJSON().options.some(o=>o.name==='dedicar'));
+  const handlers=readFileSync(new URL('events/interactionCreate.js',root),'utf8');
+  assert.doesNotMatch(handlers,/createRadioSession|buildRadioPanel/);
+  assert.match(handlers,/handleFmInteraction/);
+});
