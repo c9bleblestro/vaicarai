@@ -45,6 +45,7 @@ jobs:
       - name: Check syntax
         run: |
           node --check src/index.js
+          node --check src/utils/instaFeed.js
           node --check src/events/messageCreate.js
           node --check src/events/interactionCreate.js
           node --check src/events/ready.js
@@ -86,4 +87,4 @@ jobs:
       - name: Prepare isolated test database
         run: npx prisma db push --skip-generate
       - name: Test XP rules and PNG rendering
-        run: node --test test/chatLevelMath.test.js test/chatLevelCard.test.js test/profileStatIcons.test.js test/chatLevelIntegration.test.js test/interactionStreak.test.js test/ticketPermissions.test.js test/ticketInvite.test.js test/reactionTriggers.test.js test/communityRadio.test.js test/fmTracks.test.js test/profileStudio.test.js test/economyProgress.test.js test/petWorld.test.js
+        run: node --test test/chatLevelMath.test.js test/chatLevelCard.test.js test/profileStatIcons.test.js test/chatLevelIntegration.test.js test/interactionStreak.test.js test/ticketPermissions.test.js test/ticketInvite.test.js test/reactionTriggers.test.js test/communityRadio.test.js test/fmTracks.test.js test/profileStudio.test.js test/economyProgress.test.js test/petWorld.test.js test/instaFeed.test.js

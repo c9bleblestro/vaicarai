@@ -1,4 +1,5 @@
 import { readFile } from 'node:fs/promises';
+import { INSTA_EMOJI_ASSETS } from './instaEmojiAssets.js';
 import { fileURLToPath } from 'node:url';
 import path from 'node:path';
 import { createCanvas, loadImage } from '@napi-rs/canvas';
@@ -66,6 +67,11 @@ const REQUIRED_EMOJIS = [
   // ── Feed do Instagram ─────────────────────────────────────────────────────
   { name: 'insta_comment',   asset: 'insta-comment.webp', mime: 'image/webp', fallback: '💬' },
   { name: 'insta_like',      asset: 'insta-like.webp',    mime: 'image/webp', fallback: '💜' },
+  { name: 'insta_white_header', inline: 'header', mime: 'image/png', fallback: '▫️' },
+  { name: 'insta_white_like', inline: 'like', mime: 'image/png', fallback: '✔️' },
+  { name: 'insta_white_dislike', inline: 'dislike', mime: 'image/png', fallback: '✖️' },
+  { name: 'insta_white_delete', inline: 'delete', mime: 'image/png', fallback: '🗑️' },
+  { name: 'insta_white_details', inline: 'details', mime: 'image/png', fallback: '📋' },
   // ── Moderação ────────────────────────────────────────────────────────────────
   { name: 'mod_heart', asset: 'mod-heart.png', mime: 'image/png', fallback: '❤️' },
 ];
@@ -214,7 +220,9 @@ export async function initEmojis(client) {
       try {
         let buf;
         let mime = def.mime;
-        if (def.asset) {
+        if (def.inline) {
+          buf = Buffer.from(INSTA_EMOJI_ASSETS[def.inline], 'base64');
+        } else if (def.asset) {
           ({ buffer: buf, mime } = await readEmojiAsset(def));
         } else {
           const url = cdnUrl(def.sourceId, def.animated);
@@ -223,7 +231,7 @@ export async function initEmojis(client) {
           buf = Buffer.from(await resp.arrayBuffer());
           mime = `image/${def.animated ? 'gif' : 'png'}`;
         }
-        if (!def.asset) {
+        if (!def.asset && !def.inline) {
           ({ buffer: buf, mime } = await prepareEmojiAsset(buf, mime, def.animated));
         }
         const b64 = `data:${mime};base64,${buf.toString('base64')}`;
