@@ -446,13 +446,14 @@ export async function generateProfileCard({
   // Parâmetros internos para geração de GIF animado:
   _bannerImage = null,   // Image já carregada — pula o loadUrl do banner
   _resolvedBanner = null, // Banner já resolvido — evita nova consulta/download
+  _returnLayers = false,
   _returnCanvas = false, // se true, retorna o canvas em vez de PNG buffer
 }) {
   if (appearance && normalizeAppearance(appearance).theme !== 'classic') {
     return drawStudioProfile({
       username, avatarUrl, balance, bank, activeBanner, purchases, activeRing, ringBorderColor, activePet,
       guildBadgeEmojis, guildId, marriedToName, bestFriendName, bio, cardBg1, cardBg2, cardPanelColor,
-      xp, reps, chatLevel, appearance, marriedStreak, friendStreak, _bannerImage, _resolvedBanner, _returnCanvas,
+      xp, reps, chatLevel, appearance, marriedStreak, friendStreak, _bannerImage, _resolvedBanner, _returnCanvas, _returnLayers,
     }, { loadUrl, loadEmojiImg, drawBioWithEmojis, loadProfileStatIconSheet, drawProfileStatIcon,
       computeLevel, computeEarnedBadgeKeys, BADGE_DEFS, fmtCompact, drawAvatarRing, resolveBanner,
       roundRect, isColorDark, STAT_ICON_CONFIGS });
@@ -559,6 +560,8 @@ export async function generateProfileCard({
     ctx.restore();
   };
 
+  const background=_returnLayers?createCanvas(W,H):null;
+  if(background)background.getContext('2d').drawImage(canvas,0,0);
   if (_bannerImage) {
     drawBannerImage(_bannerImage);
   } else if (banner) {
@@ -574,6 +577,7 @@ export async function generateProfileCard({
     drawDefaultBannerTexture();
   }
 
+  if(background)ctx.clearRect(0,0,W,H);
   ctx.save();
   roundRect(ctx, BANNER_X, BANNER_Y, BANNER_W, BANNER_H, 24);
   ctx.strokeStyle = 'rgba(255,255,255,0.68)';
@@ -791,6 +795,7 @@ export async function generateProfileCard({
   }
 
   ctx.textAlign = 'left';
+  if(background)return {background,foreground:canvas,bannerRect:[BANNER_X,BANNER_Y,BANNER_W,BANNER_H,24]};
   if (_returnCanvas) return canvas;
   return canvas.toBuffer('image/png');
 }
