@@ -138,17 +138,17 @@ export function drawRigFrame(c,species,{view='room',theme='neon',action='idle',t
  const portrait=view==='portrait',p=palette[theme]??palette.neon;
  c.clearRect(0,0,portrait?384:480,portrait?256:320);
  if(!portrait)room(c,theme);
- const pose=rigPose(action,t),activity=easeWave(t,.5,.43),x=(portrait?192:242)+pose.x,ground=portrait?221:270;
+ const pose=rigPose(action,t),activity=easeWave(t,.5,.43),x=(portrait?192:242)+pose.x,ground=portrait?226:270;
  // Stable feet and camera. Only the pet's independently articulated parts move.
  if(action==='alimentar')bowl(c,x+58,ground+2,1-.85*activity);
  if(action==='brincar')ball(c,x+70+18*Math.sin(t*TAU*2),ground-8-15*activity*Math.abs(Math.sin(t*TAU*3)),p);
  if(action==='dormir'&&!portrait){round(c,x-69,ground-15,138,23,11,p.bed,INK,1.5);line(c,'M'+(x-50)+' '+(ground+4)+' H'+(x+50),p.accent,1.5);}
  if(!portrait)ellipse(c,x,ground+4,57-pose.jump*.8,8,'#49344945');
- c.save();c.translate(x,ground-pose.jump);c.scale(portrait?1.43:1.19,portrait?1.43:1.19);animal(c,species,pose);c.restore();
+ c.save();c.translate(x,ground-pose.jump);c.scale(portrait?1.28:1.19,portrait?1.28:1.19);animal(c,species,pose);c.restore();
  if(action==='banho'){
    // The front of the basin occludes the feet; bubbles rise around the pet.
    path(c,'M'+(x-68)+' '+(ground-26)+' Q'+x+' '+(ground-14)+' '+(x+68)+' '+(ground-26)+' L'+(x+57)+' '+(ground+5)+' Q'+x+' '+(ground+22)+' '+(x-57)+' '+(ground+5)+'Z','#b7c9dd',INK,2);
-   for(let i=0;i<7;i++){const u=(t*1.5+i/7)%1,r=5+i%3*2,bx=x-64+(i*23)%128+Math.sin(u*TAU)*5,by=ground-25-u*115;c.save();c.globalAlpha=Math.sin(u*Math.PI)*.8;ellipse(c,bx,by,r,r,'#eef7ff70','#eaf3f9',1.3);ellipse(c,bx-r*.3,by-r*.3,1.5,1.5,'#fff');c.restore();}
+   for(let i=0;i<7;i++){const u=(t*2+i/7)%1,r=5+i%3*2,bx=x-64+(i*23)%128+Math.sin(u*TAU)*5,by=ground-25-u*115;c.save();c.globalAlpha=Math.sin(u*Math.PI)*.8;ellipse(c,bx,by,r,r,'#eef7ff70','#eaf3f9',1.3);ellipse(c,bx-r*.3,by-r*.3,1.5,1.5,'#fff');c.restore();}
  }
  if(action==='acariciar'||action==='coletar')for(let i=0;i<4;i++){const u=(t+i/4)%1;c.save();c.globalAlpha=Math.sin(u*Math.PI)*activity;heart(c,x-67+i*43,ground-65-u*82,6,p.accent);c.restore();}
  if(action==='dormir')for(let i=0;i<3;i++){const u=(t+i/3)%1;c.save();c.globalAlpha=Math.sin(u*Math.PI);c.fillStyle=portrait?'#a38db8':p.accent;c.font='bold '+Math.round(11+u*8)+'px sans-serif';c.fillText('z',x+47+u*20,ground-115-u*35);c.restore();}
