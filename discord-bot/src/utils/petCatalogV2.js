@@ -6,13 +6,15 @@ export async function migratePetCatalogForGuild(guildId,db=prisma){
   return db.$transaction(async tx=>{
     await tx.$queryRaw`SELECT pg_advisory_xact_lock(hashtext(${guildId} || ':petworld-v2'))::text`;
     const existing=await tx.pet.findMany({where:{guildId}});
+    if(ILLUSTRATED_PETS.every(def=>existing.some(p=>p.id==='pw2-'+def.key+'-'+guildId)))return {retired:0,owners:0};
     const legacy=existing.filter(p=>!illustratedPetKey(p.id));
     const oldIds=legacy.map(p=>p.id);
     const catalog=[];
     for(const def of ILLUSTRATED_PETS){
       const id='pw2-'+def.key+'-'+guildId;
       const collision=existing.find(p=>p.name===def.name&&p.id!==id);
-      const name=collision?def.name+' · Pet World':def.name;
+      let name=collision?def.name+' · Pet World':def.name;
+      for(let suffix=2;existing.some(p=>p.name===name&&p.id!==id);suffix++)name=def.name+' · Pet World '+suffix;
       const pet=await tx.pet.upsert({where:{id},create:{id,guildId,name,emoji:def.emoji,description:def.description,price:def.price,active:true},update:{emoji:def.emoji,description:def.description,active:true,imageUrl:null}});
       catalog.push(pet);
     }
