@@ -4,7 +4,8 @@ import {readFile} from 'node:fs/promises';
 import {fileURLToPath} from 'node:url';
 import {join} from 'node:path';
 import {petThumbnailUrl} from './petComponents.js';
-import {getPetIllustration,illustratedPetKey} from './petIllustrationPack.js';
+import {Worker} from 'node:worker_threads';
+import {getPetIllustration,getPetMotionSource,illustratedPetKey} from './petIllustrationPack.js';
 const W=600,H=400,TAU=2*Math.PI;
 const THEMES={
   neon:{wall:'#241938',wall2:'#472655',floor:'#39273e',floor2:'#7d466d',neon:'#ff90dc',light:'#b6a1ff',sofa:'#be5893',trim:'#885cb0',sky:'#171e4a',rug:'#db93c0'},
@@ -223,7 +224,7 @@ function drawMotion(ctx,background,frames,pet,theme,view,action,t,ms){
 function cachePut(key,result){
   gifCache.set(key,{result,expires:Date.now()+300000});
   let bytes=[...gifCache.values()].reduce((s,v)=>s+v.result.buffer.length,0);
-  while(gifCache.size>12||bytes>28*1024*1024){const k=gifCache.keys().next().value;bytes-=gifCache.get(k).result.buffer.length;gifCache.delete(k);}
+  while(gifCache.size>40||bytes>56*1024*1024){const k=gifCache.keys().next().value;bytes-=gifCache.get(k).result.buffer.length;gifCache.delete(k);}
 }
 async function render(pet,{theme='neon',view='room',action='idle',spriteBuffer=null}={}){
   theme=Object.hasOwn(THEMES,theme)?theme:'neon';view=view==='portrait'?'portrait':'room';
@@ -267,85 +268,155 @@ async function localClip(pet,opts){
     return {buffer,ext:'gif',sourceAnimated:true,sourceFound:true,fps:null};
   }catch{return null;}
 }
-// New companions always use their own illustrated frames, never an emoji cutout.
+// A pose timeline defines one complete action. Never modulo-wrap a partial
+// sequence or jump from a sleeping pose to a play pose during a reaction.
+const POSES={
+  'luna:room':{
+    idle:[0,1,0,2,0,1,0],brincar:[0,3,4,5,6,7,6,8,9,0],
+    alimentar:[0,3,0,1,2,0],acariciar:[0,1,8,9,8,2,0],
+    banho:[0,1,2,1,0],dormir:[11,12,13,14,15,14,13,12,11],
+    aventura:[0,3,0,2,0],coletar:[0,8,9,10,8,0],away:[0,1,0,2,0]
+  },
+  'koda:room':{
+    idle:[0,1,0,2,0,1,0],brincar:[0,2,3,4,5,6,7,6,3,0],
+    alimentar:[0,2,0,1,3,0],acariciar:[0,1,3,1,0],
+    banho:[0,1,2,1,0],dormir:[8],aventura:[0,2,3,2,0],
+    coletar:[0,1,3,1,0],away:[0,1,0,2,0]
+  },
+  'luna:portrait':{
+    idle:[0,1,2,4,5,14,15,0],brincar:[0,3,4,5,6,7,8,9,10,14,0],
+    alimentar:[0,1,5,6,9,10,14,0],acariciar:[0,4,5,6,9,10,11,14,0],
+    banho:[0,2,4,5,4,14,0],dormir:[5,10,11,10,5],
+    aventura:[0,2,3,4,14,0],coletar:[0,5,6,7,8,9,10,14,0],away:[0,1,0]
+  },
+  'koda:portrait':{
+    idle:[0,1,2,3,2,1,0],brincar:[0,3,4,5,6,7,0],
+    alimentar:[0,3,4,5,0],acariciar:[0,1,4,5,1,0],
+    banho:[0,3,1,2,0],dormir:[1,7,1],aventura:[0,3,2,0],
+    coletar:[0,3,4,5,0],away:[0,1,0]
+  }
+};
+export const ILLUSTRATED_ACTIONS=['idle','brincar','alimentar','acariciar','banho','dormir','aventura','coletar','away'];
+export const ACTION_DURATION=5600;
+export function petMotionPlan(species,view,action,step=80){
+  const chosen=POSES[species+':'+view]?.[action];
+  if(!chosen)throw Error('Invalid illustrated motion');
+  // Natural resting holds; animation plays once inside each loop.
+  const weights=chosen.map((_,i)=>i===0||i===chosen.length-1?2.5:1);
+  const sum=weights.reduce((a,b)=>a+b,0);
+  const edges=[];let time=0;
+  for(const weight of weights){time+=weight/sum*ACTION_DURATION;edges.push(time);}
+  const out=[];let at=0;
+  for(let t=0;t<ACTION_DURATION;t+=step){
+    while(at<edges.length-1&&t>=edges[at])at++;
+    out.push({index:chosen[at],time:t,delay:Math.min(step,ACTION_DURATION-t),phase:t/ACTION_DURATION});
+  }
+  return out;
+}
 const illustratedFrames=new Map();
-async function renderIllustrated(pet,{theme='neon',view='room',action='idle'}={}){
+export async function renderIllustrated(pet,{theme='neon',view='room',action='idle'}={}){
   const species=illustratedPetKey(pet.id);
   view=view==='portrait'?'portrait':'room';
-  const source=getPetIllustration(pet.id,view);
-  if(!source)throw new Error('Missing illustrated companion art');
-  // Default view is exactly the original GIF, with its original palette and timing.
+  theme=Object.hasOwn(THEMES,theme)?theme:'neon';
+  if(!ILLUSTRATED_ACTIONS.includes(action))action='idle';
+  const idle=getPetIllustration(pet.id,view);
+  if(!idle)throw Error('Missing illustrated companion art');
   if((action==='idle'||action==='away')&&(theme==='neon'||view==='portrait')){
-    return {buffer:source,ext:'gif',sourceAnimated:true,sourceFound:true,illustrated:true,fps:null};
+    return {buffer:idle,ext:'gif',sourceAnimated:true,sourceFound:true,illustrated:true,fps:null};
   }
   const frameKey=species+':'+view;
   let frames=illustratedFrames.get(frameKey);
-  if(!frames){frames=await decodePetSprite(source);if(!frames.length)throw new Error('Invalid illustrated frames');illustratedFrames.set(frameKey,frames);}
-  const cat=species==='luna',portrait=view==='portrait';
-  const indices=portrait&&cat?{
-    brincar:[2,3,4,5,6,7,8,9,10,11,12,13],
-    alimentar:[4,5,6,7,8,9,10],acariciar:[5,6,7,8,9,10,11],
-    banho:[0,1,2,3,4,5,6],dormir:[10,11,12,11],aventura:[0,1,2,3,4,5,6],coletar:[5,6,7,8,9,10]
-  }:cat?{
-    brincar:[0,3,4,5,6,7,6,5,4,3,0],alimentar:[0,1,2,8,9,10,8,0],
-    acariciar:[0,1,2,8,9,10,8,1],banho:[0,1,2,8,9,1],dormir:[11,12,13,14,15,14,13,12],
-    aventura:[0,3,4,5,6,3,0],coletar:[0,1,8,9,10,8,1]
-  }:{
-    brincar:[0,2,3,4,5,6,7,6,5,4,3],alimentar:[0,1,2,3,2,1],
-    acariciar:[0,1,2,3,2,1],banho:[0,1,2,3,1],dormir:[8],
-    aventura:[0,2,3,4,5,4,2],coletar:[0,1,2,3,2,1]
-  };
-  const chosen=(indices[action]??frames.map((_,i)=>i)).filter(i=>i<frames.length).map(i=>frames[i]);
-  const seq=chosen.length?chosen:frames,w=frames[0].image.width,h=frames[0].image.height;
+  if(!frames){frames=await decodePetSprite(getPetMotionSource(pet.id,view));if(!frames.length)throw Error('Invalid illustrated frames');illustratedFrames.set(frameKey,frames);}
+  const portrait=view==='portrait',w=frames[0].image.width,h=frames[0].image.height;
   const canvas=createCanvas(w,h),ctx=canvas.getContext('2d'),p=safeTheme(theme);
-  // Preserve all drawn poses. Animate only the small reaction effects between poses.
-  const enc=new GifEncoder(w,h,{repeat:0,quality:8});
-  const duration=4800,delay=80,count=duration/delay;
-  // Retimed idle assets include long natural rests; reaction clips use a separate
-  // pose clock so their movements are not swallowed by those holds.
-  const motionSeq=seq.map(f=>({...f,delay:Math.min(420,Math.max(100,f.delay))}));
-  try{
-    for(let i=0;i<count;i++){
-      const phase=i/count,t=i*delay,src=spriteAt(motionSeq,t);
-      ctx.clearRect(0,0,w,h);ctx.drawImage(src,0,0,w,h);
-      if(!portrait&&theme!=='neon'){
-        const lighting=ctx.createLinearGradient(0,0,w,0);
-        lighting.addColorStop(0,theme==='rose'?'#f34d8f43':'#476df05c');
-        lighting.addColorStop(.28,'#ffffff00');lighting.addColorStop(.72,'#ffffff00');
-        lighting.addColorStop(1,theme==='rose'?'#ff8bbf60':'#629eff65');
-        ctx.fillStyle=lighting;ctx.fillRect(0,0,w,h);
+  // Use a complete action at a constant effect cadence, with smaller dimensions
+  // as the size fallback instead of chopping off the animation or deleting the gallery.
+  for(const [scale,step] of [[1,80],[.80,100],[.65,100]]){
+    const ow=Math.round(w*scale),oh=Math.round(h*scale),out=createCanvas(ow,oh),oc=out.getContext('2d');
+    const timeline=petMotionPlan(species,view,action,step);
+    const enc=new GifEncoder(ow,oh,{repeat:0,quality:8});
+    try{
+      for(const item of timeline){
+        const {phase,time,index,delay}=item,src=frames[index]?.image;
+        if(!src)throw Error('Pose missing for '+species+':'+view+':'+index);
+        ctx.clearRect(0,0,w,h);ctx.drawImage(src,0,0,w,h);
+        if(!portrait&&theme!=='neon'){
+          const lighting=ctx.createLinearGradient(0,0,w,0);
+          lighting.addColorStop(0,theme==='rose'?'#e45b9c42':'#476df052');
+          lighting.addColorStop(.32,'#ffffff00');lighting.addColorStop(.68,'#ffffff00');
+          lighting.addColorStop(1,theme==='rose'?'#ee94bf52':'#629eff58');
+          ctx.fillStyle=lighting;ctx.fillRect(0,0,w,h);
+        }
+        const envelope=Math.sin(Math.PI*phase)**2;
+        if(action==='acariciar'||action==='coletar'){
+          for(let j=0;j<3;j++){const v=(phase*1.6+j/3)%1;ctx.save();ctx.globalAlpha=.78*envelope*Math.sin(Math.PI*v);heart(ctx,w*(.23+j*.25)+w*.018*Math.sin(v*TAU),h*(.62-v*.35),w*.018,p.neon);ctx.restore();}
+        }
+        if(action==='alimentar'){
+          // Small food particles, not a false affection animation.
+          for(let j=0;j<5;j++){const v=(time/760+j/5)%1;ctx.save();ctx.globalAlpha=envelope*Math.sin(v*Math.PI);ellipse(ctx,w*(.43+j*.018+v*.04),h*(.66+v*.055),w*.006,w*.004,'#eab773');ctx.restore();}
+        }
+        if(action==='banho'){
+          for(let j=0;j<7;j++){const v=(phase*1.4+j/7)%1,bx=w*(.20+(j%5)*.15)+Math.sin(v*TAU+j)*w*.014,by=h*(.86-v*.66),r=w*(.011+j%3*.004);ctx.save();ctx.globalAlpha=.8*envelope*Math.sin(Math.PI*v);ellipse(ctx,bx,by,r,r,'#d4e9ff26');ctx.strokeStyle='#e6d6ffcc';ctx.lineWidth=1;ctx.beginPath();ctx.arc(bx,by,r,0,TAU);ctx.stroke();ellipse(ctx,bx-r*.35,by-r*.40,r*.20,r*.14,'#ffffffbe');ctx.restore();}
+        }
+        if(action==='dormir'&&portrait){
+          for(let j=0;j<3;j++){const v=(phase+j/3)%1;ctx.save();ctx.globalAlpha=.75*Math.sin(Math.PI*v);ctx.font='bold '+Math.round(w*.035+v*w*.02)+'px sans-serif';ctx.fillStyle='#ded3ff';ctx.fillText('z',w*(.64+v*.12),h*(.46-v*.27));ctx.restore();}
+        }
+        if(action==='coletar'||action==='brincar'){
+          for(let j=0;j<3;j++){const v=(phase+j/3)%1;ctx.save();ctx.globalAlpha=.6*envelope*Math.sin(Math.PI*v);sparkle(ctx,w*(.22+j*.29),h*(.64-v*.35),w*.014,p.light);ctx.restore();}
+        }
+        oc.clearRect(0,0,ow,oh);oc.drawImage(canvas,0,0,ow,oh);
+        const rgba=oc.getImageData(0,0,ow,oh).data;
+        enc.addFrame(new Uint8Array(rgba.buffer,rgba.byteOffset,rgba.byteLength),ow,oh,{delay});
       }
-      if(['acariciar','coletar','alimentar'].includes(action)){
-        for(let j=0;j<4;j++){const v=(phase+j/4)%1;ctx.save();ctx.globalAlpha=.75*Math.sin(Math.PI*v);heart(ctx,w*(.26+j*.13),h*(.61-v*.35),w*.018,p.neon);ctx.restore();}
-      }
-      if(action==='banho'){
-        for(let j=0;j<8;j++){const v=(phase+j/8)%1,bx=w*(.24+(j%5)*.13),by=h*(.84-v*.63),r=w*(.012+j%3*.005);ctx.save();ctx.globalAlpha=.75*Math.sin(Math.PI*v);ellipse(ctx,bx,by,r,r,'#d4e9ff33');ctx.strokeStyle='#e6d6ffb0';ctx.lineWidth=1;ctx.beginPath();ctx.arc(bx,by,r,0,TAU);ctx.stroke();ctx.restore();}
-      }
-      if(action==='dormir'){
-        for(let j=0;j<3;j++){const v=(phase+j/3)%1;ctx.save();ctx.globalAlpha=.8*Math.sin(Math.PI*v);ctx.font='bold '+Math.round(w*.035+v*w*.02)+'px sans-serif';ctx.fillStyle='#ded3ff';ctx.fillText('z',w*(.65+v*.10),h*(.49-v*.22));ctx.restore();}
-      }
-      if(action==='brincar'||action==='aventura'){
-        for(let j=0;j<3;j++){const v=(phase+j/3)%1;ctx.save();ctx.globalAlpha=.7*Math.sin(Math.PI*v);sparkle(ctx,w*(.25+j*.25),h*(.55-v*.23),w*.018,p.light);ctx.restore();}
-      }
-      const rgba=ctx.getImageData(0,0,w,h).data;enc.addFrame(new Uint8Array(rgba.buffer,rgba.byteOffset,rgba.byteLength),w,h,{delay});
-    }
-    const buffer=Buffer.from(enc.finish());
-    if(buffer.length>8*1024*1024)throw new Error('Illustrated GIF too large');
-    return {buffer,ext:'gif',sourceAnimated:true,sourceFound:true,illustrated:true,fps:1000/delay};
-  }finally{enc.dispose();}
+      const buffer=Buffer.from(enc.finish());
+      if(buffer.length<=8*1024*1024)return {buffer,ext:'gif',sourceAnimated:true,sourceFound:true,illustrated:true,fps:1000/step};
+    }finally{enc.dispose();}
+  }
+  throw Error('Illustrated GIF exceeds upload limit');
 }
-
+// CPU-bound GIF encoding is isolated from Discord's heartbeat and interaction
+// event loop. One concurrent worker; bounded queue; shared species-level cache.
+let workerTail=Promise.resolve(),queued=0;
+function renderInWorker(pet,opts){
+  if(queued>=8)return Promise.reject(Error('Pet animation queue full'));
+  queued++;
+  const deadline=Date.now()+20000;
+  const job=workerTail.catch(()=>{}).then(()=>new Promise((resolve,reject)=>{
+    const budget=deadline-Date.now();if(budget<3000){reject(Error('Pet animation queue deadline exceeded'));return;}
+    const worker=new Worker(new URL('./petMediaWorker.js',import.meta.url),{workerData:{pet,opts}});
+    let settled=false;
+    const finish=(error,result)=>{
+      if(settled)return;settled=true;clearTimeout(timer);
+      worker.terminate().catch(()=>{});
+      if(error)reject(error);else resolve({...result,buffer:Buffer.from(result.buffer)});
+    };
+    const timer=setTimeout(()=>finish(Error('Pet animation timed out')),budget);
+    worker.once('message',msg=>msg.error?finish(Error(msg.error)):finish(null,msg.result));
+    worker.once('error',error=>finish(error));
+    worker.once('exit',code=>finish(Error('Pet animation worker exited: '+code)));
+  }));
+  workerTail=job.finally(()=>{queued--;});workerTail.catch(()=>{});
+  let timer;
+  return Promise.race([job,new Promise((_,reject)=>{timer=setTimeout(()=>reject(Error('Pet animation wait expired')),20000);})]).finally(()=>clearTimeout(timer));
+}
 export async function renderPetWorld(pet,opts={}){
   if(opts.spriteBuffer)return render(pet,opts);
-  const key=JSON.stringify([pet.id,pet.imageUrl,pet.emoji,opts.theme,opts.view,opts.action]);
+  const species=illustratedPetKey(pet.id);
+  const normalized={theme:Object.hasOwn(THEMES,opts.theme)?opts.theme:'neon',view:opts.view==='portrait'?'portrait':'room',action:ILLUSTRATED_ACTIONS.includes(opts.action)?opts.action:'idle'};
+  if(normalized.view==='portrait')normalized.theme='neon';
+  if(species&&(normalized.action==='idle'||normalized.action==='away')&&(normalized.theme==='neon'||normalized.view==='portrait')){
+    const buffer=getPetIllustration(pet.id,normalized.view);
+    return {buffer,ext:'gif',sourceAnimated:true,sourceFound:true,illustrated:true,fps:null};
+  }
+  const key=JSON.stringify(species?[species,normalized.theme,normalized.view,normalized.action]:[pet.id,pet.imageUrl,pet.emoji,normalized.theme,normalized.view,normalized.action]);
   const found=gifCache.get(key);if(found&&found.expires>Date.now())return found.result;
   if(found)gifCache.delete(key);
   if(inflight.has(key))return inflight.get(key);
-  const pending=(illustratedPetKey(pet.id)?renderIllustrated(pet,opts).catch(error=>{
+  const pending=(species?renderInWorker({id:pet.id},normalized).catch(error=>{
     console.warn('[pet-art] reaction failed, retaining illustrated view:',error?.message??error);
     const buffer=getPetIllustration(pet.id,opts.view==='portrait'?'portrait':'room');
     if(!buffer)throw error;
     return {buffer,ext:'gif',sourceAnimated:true,sourceFound:true,illustrated:true,fallback:true,fps:null};
-  }):localClip(pet,opts).then(clip=>clip??render(pet,opts))).then(result=>{if(result.sourceFound||!petThumbnailUrl(pet))cachePut(key,result);return result;}).finally(()=>inflight.delete(key));
+  }):localClip(pet,opts).then(clip=>clip??render(pet,opts))).then(result=>{if(!result.fallback&&(result.sourceFound||!petThumbnailUrl(pet)))cachePut(key,result);return result;}).finally(()=>inflight.delete(key));
   inflight.set(key,pending);return pending;
 }

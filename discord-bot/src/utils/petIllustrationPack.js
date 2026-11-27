@@ -74,11 +74,39 @@ const LONG_DELAYS={
  'koda:room':[800,130,380,550,240,260,520,720,1400]
 };
 
-let pack;
+// Separate the gallery idle loop from the complete source pose library.
+let pack, motionPack;
+function makeIdle(source,sequence){
+  const parsed=parseGIF(source.buffer.slice(source.byteOffset,source.byteOffset+source.byteLength));
+  const {width:w,height:h}=parsed.lsd;
+  const comp=createCanvas(w,h),ctx=comp.getContext('2d'),poses=[];
+  for(const frame of decompressFrames(parsed,true)){
+    const d=frame.dims,previous=frame.disposalType===3?ctx.getImageData(0,0,w,h):null;
+    const patch=createCanvas(d.width,d.height),pc=patch.getContext('2d'),data=pc.createImageData(d.width,d.height);
+    data.data.set(frame.patch);pc.putImageData(data,0,0);ctx.drawImage(patch,d.left,d.top);
+    poses.push(new Uint8Array(ctx.getImageData(0,0,w,h).data));
+    if(previous)ctx.putImageData(previous,0,0);else if(frame.disposalType===2)ctx.clearRect(d.left,d.top,d.width,d.height);
+  }
+  const enc=new GifEncoder(w,h,{repeat:0,quality:8});
+  try{
+    for(const [index,delay] of sequence){
+      if(!poses[index])throw Error('Invalid idle pose '+index);
+      enc.addFrame(poses[index],w,h,{delay});
+    }
+    return Buffer.from(enc.finish());
+  }finally{enc.dispose();}
+}
+// Blink, look, return to resting pose. No sleeping or playing in a shop idle.
+const IDLE_SEQUENCES={
+  'luna:portrait':[[0,800],[1,280],[2,260],[3,220],[4,120],[5,100],[4,120],[14,400],[15,850],[0,850],[1,250],[0,850]],
+  'luna:room':[[0,850],[1,140],[0,650],[2,200],[0,850],[1,140],[0,700],[2,200],[0,850]],
+  'koda:portrait':[[0,850],[1,140],[2,700],[3,380],[2,700],[1,140],[0,850],[3,280],[0,850]],
+  'koda:room':[[0,850],[1,140],[0,650],[2,380],[0,800],[1,140],[0,700],[2,380],[0,850]]
+};
 function loadPack(){
   if(pack)return pack;
   const data=JSON.parse(gunzipSync(readFileSync(new URL('../assets/pet-world/v2/pack.json.gz',import.meta.url))).toString('utf8'));
-  const result=new Map();
+  const result=new Map(),motions=new Map();
   for(const {key} of ILLUSTRATED_PETS){
     for(const view of ['portrait','room']){
       const name=key+'-'+view+'.gif',value=data[name];
@@ -89,14 +117,22 @@ function loadPack(){
       if(parsed.frames.filter(f=>f.image).length<4||parsed.lsd.width*parsed.lsd.height>2e6)throw new Error('Invalid illustrated frame count: '+name);
       const nameKey=key+':'+view;
       const clip=nameKey==='koda:portrait'?isolateKoda(buffer):retimeIllustration(buffer,LONG_DELAYS[nameKey]);
-      result.set(nameKey,clip);
+      motions.set(nameKey,clip);
+      const idle=makeIdle(clip,IDLE_SEQUENCES[nameKey]);
+      if(idle.length>8*1024*1024)throw Error('Idle clip exceeds upload limit: '+nameKey);
+      result.set(nameKey,idle);
     }
   }
-  pack=result;return pack;
+  motionPack=motions;pack=result;return pack;
 }
 export function validatePetIllustrations(){return loadPack().size===4;}
 export function getPetIllustration(id,view='room'){
   const key=illustratedPetKey(id);
   if(!key)return null;
   return loadPack().get(key+':'+(view==='portrait'?'portrait':'room'))??null;
+}
+
+export function getPetMotionSource(id,view='room'){
+  const key=illustratedPetKey(id);if(!key)return null;
+  loadPack();return motionPack.get(key+':'+(view==='portrait'?'portrait':'room'))??null;
 }
