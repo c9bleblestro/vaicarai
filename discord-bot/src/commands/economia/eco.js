@@ -11,10 +11,12 @@ import {
   MessageFlags,
 } from 'discord.js';
 import { fileURLToPath } from 'node:url';
+import { randomBytes } from 'node:crypto';
+import { REWARD_PERIODS, activeStreak, dailyMilestones, makeWorkChallenge, timeLeft } from '../../utils/economyProgress.js';
 import prisma from '../../database/client.js';
 import { Prisma } from '@prisma/client';
 import { getEmoji } from '../../utils/emojiManager.js';
-import { generateBalanceCard, generateTopCard } from '../../utils/economyCards.js';
+import { generateBalanceCard, generateTopCard, generateEconomyRewardArt } from '../../utils/economyCards.js';
 import { spendCoins, totalCoins } from '../../utils/economyFunds.js';
 import { ROBBERY_WEAPONS, getRobberyWeapon } from '../../utils/robberyData.js';
 import { hasConfiguredEconomyBypass } from '../../utils/economyPermissions.js';
@@ -64,23 +66,17 @@ function robberyPayload(text, arrested = false, ephemeral = false) {
   };
 }
 
-function trabalhoPayload(text, components = []) {
-  const attachment = new AttachmentBuilder(
-    fileURLToPath(new URL('../../assets/trabalho-banner.jpg', import.meta.url)),
-    { name: 'trabalho-banner.jpg' },
-  );
-  const c = new ContainerBuilder()
-    .addTextDisplayComponents(new TextDisplayBuilder().setContent(text))
-    .addMediaGalleryComponents(
-      new MediaGalleryBuilder().addItems(
-        new MediaGalleryItemBuilder().setURL('attachment://trabalho-banner.jpg'),
-      ),
-    );
-  return {
-    components: [c, ...components],
-    files: [attachment],
-    flags: MessageFlags.IsComponentsV2,
-  };
+function rewardPayload(kind,text,data,components=[],animated=false){
+  try{
+    const buf=generateEconomyRewardArt(kind,data,animated);
+    const filename='economia-'+kind+(buf.subarray(0,3).toString()==='GIF'?'.gif':'.png');
+    const c=new ContainerBuilder().addTextDisplayComponents(new TextDisplayBuilder().setContent(text))
+      .addMediaGalleryComponents(new MediaGalleryBuilder().addItems(new MediaGalleryItemBuilder().setURL('attachment://'+filename)));
+    return {components:[c,...components],files:[new AttachmentBuilder(buf,{name:filename})],flags:MessageFlags.IsComponentsV2};
+  }catch(error){console.warn('[economy-art]',error?.message??error);return {...v2Rich(text),components:[...v2Rich(text).components,...components]};}
+}
+function trabalhoPayload(text,components=[],data={},animated=false){
+  return rewardPayload('work',text,data,components,animated);
 }
 
 // ─── Eco helpers ──────────────────────────────────────────────────────────────
@@ -216,6 +212,7 @@ function workMenuPayload(eco) {
     `${availableJobs.map(job => `${job.emoji} **${job.name}** — ${job.min.toLocaleString('pt-BR')}–${job.max.toLocaleString('pt-BR')} coins`).join('\n')}` +
     `${lockedText}\n\nEscolha uma profissão para trabalhar:`,
     [new ActionRowBuilder().addComponents(menu)],
+    {status:'Nível '+level+' / 10',subtitle:'CARREIRA',detail:workProgress(workXp,level),footer:nextJob?'Próxima: '+nextJob.name:'Todas as profissões desbloqueadas'},
   );
 }
 
@@ -236,38 +233,32 @@ async function getEco(userId, guildId, db = prisma) {
   });
 }
 
-async function claimPeriodicReward({
-  userId,
-  guildId,
-  member,
-  reply,
-  field,
-  cooldown,
-  amountFactory,
-  label,
-  nextLabel,
-}) {
-  const eco = await getEco(userId, guildId);
-  const canBypassCooldown = await hasConfiguredEconomyBypass({ guildId, member });
-  const now = Date.now();
-  const last = eco[field]?.getTime() ?? 0;
-  const diff = now - last;
-
-  if (!canBypassCooldown && diff < cooldown) {
-    return reply(v2Err(`${label} indisponível. Volte em **${msToHuman(cooldown - diff)}**!`));
-  }
-
-  const amount = amountFactory();
-  await prisma.economy.update({
-    where: { userId_guildId: { userId, guildId } },
-    data: { balance: { increment: amount }, [field]: new Date(now) },
+export async function claimRewardAtomic({userId,guildId,kind,canBypassCooldown=false,now=Date.now(),db=prisma,amountFactory}){
+  const p=REWARD_PERIODS[kind];if(!p||kind==='work')throw Error('Recompensa inválida');
+  await getEco(userId,guildId,db);
+  return db.$transaction(async tx=>{
+    const eco=await tx.economy.findUnique({where:{userId_guildId:{userId,guildId}}});
+    const diff=now-(eco[p.field]?.getTime()??0);
+    if(!canBypassCooldown&&diff<p.cooldown)return {ok:false,remaining:p.cooldown-diff,streak:activeStreak(eco,now),next:now+p.cooldown-diff};
+    // Compare-and-set also prevents a simultaneous slash/prefix claim.
+    const streak=kind==='daily'?activeStreak(eco,now)+1:0;
+    const bonus=kind==='daily'?Math.min(streak,30)*.02:0;
+    const base=amountFactory?amountFactory():randomBetween(p.min,p.max);
+    const amount=Math.floor(base*(1+bonus));
+    const result=await tx.economy.updateMany({where:{userId,guildId,[p.field]:eco[p.field]},data:{balance:{increment:amount},[p.field]:new Date(now),...(kind==='daily'?{dailyStreak:streak}:{})}});
+    if(result.count!==1)return {ok:false,remaining:p.cooldown,streak:activeStreak(eco,now),next:now+p.cooldown};
+    return {ok:true,amount,base,streak,bonus,next:now+p.cooldown};
   });
-
-  return reply(v2Rich(
-    `## ✨ ${CAL()} ${label} resgatado\n` +
-    `${COIN()} **+${amount.toLocaleString('pt-BR')}**\n\n` +
-    `${CLK()} Próximo em **${nextLabel}**`,
-  ));
+}
+async function claimPeriodicReward({userId,guildId,member,reply,field,amountFactory}){
+  const kind={lastDaily:'daily',lastWeekly:'weekly',lastMonthly:'monthly'}[field],p=REWARD_PERIODS[kind];
+  const canBypassCooldown=await hasConfiguredEconomyBypass({guildId,member});
+  const result=await claimRewardAtomic({userId,guildId,kind,canBypassCooldown,amountFactory});
+  const next='<t:'+Math.floor(result.next/1000)+':R>';
+  const milestones=kind==='daily'?dailyMilestones(result.streak).filter(m=>m.achieved).map(m=>m.day+' dias').join(', '):'';
+  if(!result.ok)return reply(rewardPayload(kind,'## '+p.label+' — já resgatado\nPróximo resgate '+next+'.',{status:timeLeft(result.remaining),streak:result.streak,bonus:Math.min(result.streak,30)*2,detail:'Baú indisponível',footer:'Volte quando o tempo acabar.'}));
+  const title='## '+p.label+' resgatado!\n'+COIN()+' **+'+result.amount.toLocaleString('pt-BR')+' coins**\n'+(kind==='daily'?'Sequência: **'+result.streak+' dias** • bônus: **'+Math.round(result.bonus*100)+'%**\n'+(milestones?'Marcos da sequência: '+milestones+'\n':''):'')+'Próximo resgate '+next+'.';
+  return reply(rewardPayload(kind,title,{amount:result.amount,streak:result.streak,bonus:Math.round(result.bonus*100),detail:'Recompensa creditada',footer:'Próximo resgate em '+timeLeft(p.cooldown)},[],true));
 }
 
 class RobberyError extends Error {
@@ -484,65 +475,10 @@ const cmdSaldo = {
 
 // ─── /daily ───────────────────────────────────────────────────────────────────
 const cmdDaily = {
-  data: new SlashCommandBuilder()
-    .setName('daily')
-    .setDescription('💰 Colete sua recompensa diária'),
-  name: 'daily',
-  aliases: ['diario', 'd'],
-
-  async execute(interaction) {
-    const eco     = await getEco(interaction.user.id, interaction.guildId);
-    const canBypassCooldown = await hasConfiguredEconomyBypass({
-      guildId: interaction.guildId,
-      member: interaction.member,
-    });
-    const now     = Date.now();
-    const last    = eco.lastDaily?.getTime() ?? 0;
-    const diff    = now - last;
-    if (!canBypassCooldown && diff < DAILY_CD)
-      return interaction.reply({ ...v2Err(`Daily indisponível. Volte em **${msToHuman(DAILY_CD - diff)}**!`) });
-    const streak = diff < 48 * 60 * 60 * 1000 ? (eco.dailyStreak ?? 0) + 1 : 1;
-    const bonus  = Math.min(streak, 30) * 0.02;
-    const base   = DAILY_AMOUNT();
-    const amount = Math.floor(base * (1 + bonus));
-    await prisma.economy.update({
-      where: { userId_guildId: { userId: interaction.user.id, guildId: interaction.guildId } },
-      data:  { balance: { increment: amount }, lastDaily: new Date(), dailyStreak: streak },
-    });
-    return interaction.reply(v2Rich(
-      `## ✨ ${CAL()} Daily resgatado\n` +
-      `${COIN()} **+${amount.toLocaleString('pt-BR')}**\n` +
-      `${STAR()} Streak: **${streak}d** (+${Math.round(bonus * 100)}%)\n\n` +
-      `${CLK()} Próximo em **24h base**`
-    ));
-  },
-
-  async executePrefix(message) {
-    const eco     = await getEco(message.author.id, message.guildId);
-    const canBypassCooldown = await hasConfiguredEconomyBypass({
-      guildId: message.guildId,
-      member: message.member,
-    });
-    const now     = Date.now();
-    const last    = eco.lastDaily?.getTime() ?? 0;
-    const diff    = now - last;
-    if (!canBypassCooldown && diff < DAILY_CD)
-      return message.reply(v2Err(`Daily indisponível. Volte em **${msToHuman(DAILY_CD - diff)}**!`));
-    const streak = diff < 48 * 60 * 60 * 1000 ? (eco.dailyStreak ?? 0) + 1 : 1;
-    const bonus  = Math.min(streak, 30) * 0.02;
-    const base   = DAILY_AMOUNT();
-    const amount = Math.floor(base * (1 + bonus));
-    await prisma.economy.update({
-      where: { userId_guildId: { userId: message.author.id, guildId: message.guildId } },
-      data:  { balance: { increment: amount }, lastDaily: new Date(), dailyStreak: streak },
-    });
-    return message.reply(v2Rich(
-      `## ✨ ${CAL()} Daily resgatado\n` +
-      `${COIN()} **+${amount.toLocaleString('pt-BR')}**\n` +
-      `${STAR()} Streak: **${streak}d** (+${Math.round(bonus * 100)}%)\n\n` +
-      `${CLK()} Próximo em **24h base**`
-    ));
-  },
+  data:new SlashCommandBuilder().setName('daily').setDescription('Colete sua recompensa diária'),
+  name:'daily',aliases:['diario','d'],
+  async execute(i){await i.deferReply();return claimPeriodicReward({userId:i.user.id,guildId:i.guildId,member:i.member,reply:p=>i.editReply(p),field:'lastDaily',amountFactory:DAILY_AMOUNT});},
+  async executePrefix(m){return claimPeriodicReward({userId:m.author.id,guildId:m.guildId,member:m.member,reply:p=>m.reply(p),field:'lastDaily',amountFactory:DAILY_AMOUNT});}
 };
 
 // ─── /semanal e /mensal ───────────────────────────────────────────────────────
@@ -554,11 +490,12 @@ const cmdSemanal = {
   aliases: ['weekly', 'week'],
 
   async execute(interaction) {
+    await interaction.deferReply();
     return claimPeriodicReward({
       userId: interaction.user.id,
       guildId: interaction.guildId,
       member: interaction.member,
-      reply: payload => interaction.reply(payload),
+      reply: payload => interaction.editReply(payload),
       field: 'lastWeekly',
       cooldown: WEEKLY_CD,
       amountFactory: WEEKLY_AMOUNT,
@@ -590,11 +527,12 @@ const cmdMensal = {
   aliases: ['monthly', 'month'],
 
   async execute(interaction) {
+    await interaction.deferReply();
     return claimPeriodicReward({
       userId: interaction.user.id,
       guildId: interaction.guildId,
       member: interaction.member,
-      reply: payload => interaction.reply(payload),
+      reply: payload => interaction.editReply(payload),
       field: 'lastMonthly',
       cooldown: MONTHLY_CD,
       amountFactory: MONTHLY_AMOUNT,
@@ -619,7 +557,7 @@ const cmdMensal = {
 };
 
 // ─── /trabalho ────────────────────────────────────────────────────────────────
-async function performWork({ userId, guildId, jobKey, canBypassCooldown = false }) {
+async function performWork({ userId, guildId, jobKey, canBypassCooldown = false, correct=true }) {
   return prisma.$transaction(async tx => {
     const eco = await getEco(userId, guildId, tx);
     const now = Date.now();
@@ -636,12 +574,12 @@ async function performWork({ userId, guildId, jobKey, canBypassCooldown = false 
       return { ok: false, reason: 'locked', job };
     }
 
-    const amount = randomBetween(job.min, job.max);
+    const amount = correct?randomBetween(Math.ceil((job.min+job.max)/2),job.max):randomBetween(job.min,Math.floor((job.min+job.max)/2));
     const message = WORK_MESSAGES[job.key][Math.floor(Math.random() * WORK_MESSAGES[job.key].length)];
     const nextXp = workXp + job.xp;
     const nextLevel = workLevelFromXp(nextXp);
-    await tx.economy.update({
-      where: { userId_guildId: { userId, guildId } },
+    const updated=await tx.economy.updateMany({
+      where: { userId, guildId, lastWork:eco.lastWork },
       data: {
         balance: { increment: amount },
         lastWork: new Date(now),
@@ -649,8 +587,10 @@ async function performWork({ userId, guildId, jobKey, canBypassCooldown = false 
         workLevel: nextLevel,
       },
     });
+    if(updated.count!==1)return {ok:false,reason:'cooldown',remaining:WORK_CD};
     return {
       ok: true,
+      correct,
       amount,
       message,
       job,
@@ -667,11 +607,13 @@ function workResultPayload(result) {
     : '';
   return trabalhoPayload(
     `## 💼 Trabalho concluído!\n` +
+    (result.correct?'Desafio concluído com sucesso!\n':'Resposta incorreta — pagamento parcial da faixa da profissão.\n') +
     `${result.job.emoji} **${result.message}**\n` +
     `Você ganhou ${COIN()} **${result.amount.toLocaleString('pt-BR')}** como **${result.job.name}**.\n\n` +
     `📊 Nível trabalhista: **${result.nextLevel}/${WORK_LEVEL_MAX}**\n` +
     `✨ XP: **+${result.job.xp}** · ${workProgress(result.workXp, result.nextLevel)}${levelUp}\n\n` +
     `${CLK()} Volte em **1 hora** para trabalhar novamente.`,
+    [],{amount:result.amount,job:result.job.key,detail:result.job.name+' • +'+result.job.xp+' XP',footer:'Nível '+result.nextLevel+' / 10'},true,
   );
 }
 
@@ -682,25 +624,36 @@ function workErrorPayload(result) {
   return v2Err(`Essa profissão ainda está bloqueada. Alcance o nível trabalhista **${result.job?.minLevel ?? 1}** para desbloqueá-la.`);
 }
 
-export async function handleWorkInteraction(interaction) {
-  const [, ownerId] = interaction.customId.split(':');
-  if (ownerId !== interaction.user.id) {
-    return interaction.reply(v2Err('Esse menu de trabalho pertence a outra pessoa.'));
-  }
-
-  const result = await performWork({
-    userId: interaction.user.id,
-    guildId: interaction.guildId,
-    jobKey: interaction.values[0],
-    canBypassCooldown: await hasConfiguredEconomyBypass({
-      guildId: interaction.guildId,
-      member: interaction.member,
-    }),
-  });
-  if (!result.ok) return interaction.reply(workErrorPayload(result));
-  return interaction.update(workResultPayload(result));
+// Challenges are short-lived and bound to the member, guild and single message.
+const workChallenges=new Map();
+function pruneChallenges(now=Date.now()){
+  for(const [k,v] of workChallenges)if(v.expires<=now)workChallenges.delete(k);
+  while(workChallenges.size>=2000)workChallenges.delete(workChallenges.keys().next().value);
 }
-
+export async function handleWorkInteraction(i){
+  const [type,ownerId,token]=i.customId.split(':');
+  if(ownerId!==i.user.id)return i.reply(v2Err('Esse menu de trabalho pertence a outra pessoa.'));
+  if(type==='work_answer'){
+    const ch=workChallenges.get(token);
+    if(!ch||ch.owner!==i.user.id||ch.guild!==i.guildId||ch.message!==i.message.id||ch.expires<=Date.now())return i.reply(v2Err('Desafio expirado. Abra o trabalho novamente.'));
+    const index=Number(i.values[0]);
+    if(!Number.isInteger(index)||index<0||index>=ch.options.length)return i.reply(v2Err('Resposta inválida.'));
+    workChallenges.delete(token); // one attempt, before any asynchronous operation
+    await i.deferUpdate();
+    const result=await performWork({userId:i.user.id,guildId:i.guildId,jobKey:ch.job,correct:index===ch.correctIndex,canBypassCooldown:await hasConfiguredEconomyBypass({guildId:i.guildId,member:i.member})});
+    if(!result.ok){const {ephemeral,...error}=workErrorPayload(result);return i.editReply({attachments:[],...error});}
+    return i.editReply({attachments:[],...workResultPayload(result)});
+  }
+  const eco=await getEco(i.user.id,i.guildId),job=WORK_JOBS.find(j=>j.key===i.values[0]),level=workLevelFromXp(eco.workXp);
+  if(!job||job.minLevel>level)return i.reply(workErrorPayload({reason:'locked',job}));
+  const elapsed=Date.now()-(eco.lastWork?.getTime()??0);
+  if(elapsed<WORK_CD&&!await hasConfiguredEconomyBypass({guildId:i.guildId,member:i.member}))return i.reply(workErrorPayload({reason:'cooldown',remaining:WORK_CD-elapsed}));
+  pruneChallenges();
+  const key=randomBytes(8).toString('hex'),ch=makeWorkChallenge(job.key);
+  workChallenges.set(key,{...ch,job:job.key,owner:i.user.id,guild:i.guildId,message:i.message.id,expires:Date.now()+120000});
+  const menu=new StringSelectMenuBuilder().setCustomId('work_answer:'+i.user.id+':'+key).setPlaceholder('Escolha a resposta').addOptions(ch.options.map((label,index)=>({label,value:String(index)})));
+  return i.update({attachments:[],...trabalhoPayload('## '+job.emoji+' '+job.name+'\n'+ch.prompt+'\nVocê tem 2 minutos. Responda para receber seu pagamento.',[new ActionRowBuilder().addComponents(menu)],{job:job.key,status:'Desafio ativo',subtitle:'MISSÃO PROFISSIONAL',detail:job.name,footer:'Uma tentativa • 2 minutos'})});
+}
 const cmdTrabalho = {
   data: new SlashCommandBuilder()
     .setName('trabalho')
