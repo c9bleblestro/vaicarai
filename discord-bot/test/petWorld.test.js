@@ -4,9 +4,10 @@ import {createCanvas,loadImage,GifEncoder} from '@napi-rs/canvas';
 import {parseGIF,decompressFrames} from 'gifuct-js';
 import prisma from '../src/database/client.js';
 import {getPetWorld,changePetWorld,petStats,petLevel,petCooldown,MINUTE} from '../src/utils/petLife.js';
-import {decodePetSprite,renderPetWorld,petMotionPlan,ILLUSTRATED_ACTIONS,ACTION_DURATION} from '../src/utils/petWorldArt.js';
+import {decodePetSprite,renderPetWorld} from '../src/utils/petWorldArt.js';
+import {rigPose,drawRigFrame,RIG_ACTIONS,RIG_DURATION,RIG_STEP} from '../src/utils/petRigArt.js';
 import {buildWorldPayload} from '../src/commands/general/pet.js';
-import {getPetIllustration,getPetMotionSource,validatePetIllustrations} from '../src/utils/petIllustrationPack.js';
+import {getPetIllustration,validatePetIllustrations} from '../src/utils/petIllustrationPack.js';
 import {migratePetCatalogForGuild} from '../src/utils/petCatalogV2.js';
 const sample={careAt:new Date(100000),fullness:90,happiness:90,energy:90,hygiene:90,bond:10};
 test('life decay is bounded, persistent bond and levels are independent',()=>{
@@ -77,8 +78,13 @@ test('illustrated catalog serves the actual four GIF files without the old rende
       assert.equal(art.ext,'gif');
       assert.deepEqual(art.buffer,original);
       const frames=await decodePetSprite(original);
-      assert.ok(frames.length>=4);
-      assert.ok(frames.reduce((sum,f)=>sum+f.delay,0)>=4000);
+      assert.ok(frames.length>=100);
+      assert.ok(frames.reduce((sum,f)=>sum+f.delay,0)>=5500);
+      if(view==='portrait'){
+        assert.ok(frames.every(f=>f.image.getContext('2d').getImageData(0,0,1,1).data[3]===0));
+        const decoded=decompressFrames(parseGIF(original.buffer.slice(original.byteOffset,original.byteOffset+original.byteLength)),true);
+        assert.ok(decoded.every(f=>f.disposalType===2));
+      }
     }
     const art=await renderPetWorld(pet,{theme:'neon',view:'room',action:'acariciar'});
     assert.equal(art.illustrated,true);assert.equal(art.ext,'gif');
@@ -132,15 +138,33 @@ test('portrait and room stay distinct; away panel retains a real GIF',async()=>{
   }
 });
 
-test('all illustrated timelines close the loop and fit a complete 5.6s action',async()=>{
-  for(const species of ['luna','koda'])for(const view of ['portrait','room']){
-    const pet={id:'pw2-'+species+'-test'};
-    const source=await decodePetSprite(getPetMotionSource(pet.id,view));
-    for(const action of ILLUSTRATED_ACTIONS){
-      const plan=petMotionPlan(species,view,action);
-      assert.equal(plan.reduce((sum,f)=>sum+f.delay,0),ACTION_DURATION);
-      assert.equal(plan[0].index,plan.at(-1).index);
-      assert.ok(plan.every(f=>f.index>=0&&f.index<source.length));
+
+test('continuous rig motion is closed at the loop boundary and poses are bounded',()=>{
+  for(const action of RIG_ACTIONS){
+    const a=rigPose(action,0),b=rigPose(action,1);
+    for(const key of Object.keys(a))assert.ok(Math.abs(a[key]-b[key])<1e-8,action+':'+key);
+    for(let i=0;i<=100;i++){
+      const p=rigPose(action,i/100);assert.ok(Object.values(p).every(Number.isFinite));
+      assert.ok(p.blink>=0&&p.blink<=1);assert.ok(Math.abs(p.x)<=34);
+    }
+  }
+  assert.equal(RIG_DURATION/RIG_STEP,112);
+});
+test('rig frames keep one room and one character across actions; portraits have transparent edges',()=>{
+  for(const species of ['luna','koda'])for(const theme of ['neon','rose','moon']){
+    const canvas=createCanvas(480,320),ctx=canvas.getContext('2d');
+    drawRigFrame(ctx,species,{view:'room',theme,t:0});
+    const stable=Buffer.from(ctx.getImageData(0,0,100,100).data);
+    for(const action of RIG_ACTIONS){
+      drawRigFrame(ctx,species,{view:'room',theme,action,t:.5});
+      assert.deepEqual(Buffer.from(ctx.getImageData(0,0,100,100).data),stable);
+      assert.equal(ctx.getImageData(0,0,1,1).data[3],255);
+    }
+    const portrait=createCanvas(384,256),pc=portrait.getContext('2d');
+    for(const action of RIG_ACTIONS){
+      drawRigFrame(pc,species,{view:'portrait',action,t:.5});
+      assert.equal(pc.getImageData(0,0,1,1).data[3],0);
+      assert.ok(pc.getImageData(192,155,1,1).data[3]>0||pc.getImageData(220,155,1,1).data[3]>0);
     }
   }
 });
