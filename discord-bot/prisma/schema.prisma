@@ -882,3 +882,11 @@ model PetLife {
   @@id([userId, guildId, petId])
   @@index([guildId, xp])
 }
+
+
+model InstaVote {
+  postId String
+  userId String
+  vote Int
+  @@id([postId,userId])
+}
