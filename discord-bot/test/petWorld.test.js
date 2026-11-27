@@ -5,6 +5,7 @@ import {parseGIF,decompressFrames} from 'gifuct-js';
 import prisma from '../src/database/client.js';
 import {getPetWorld,changePetWorld,petStats,petLevel,petCooldown,MINUTE} from '../src/utils/petLife.js';
 import {decodePetSprite,renderPetWorld} from '../src/utils/petWorldArt.js';
+import {buildWorldPayload} from '../src/commands/general/pet.js';
 import {getPetIllustration,validatePetIllustrations} from '../src/utils/petIllustrationPack.js';
 import {migratePetCatalogForGuild} from '../src/utils/petCatalogV2.js';
 const sample={careAt:new Date(100000),fullness:90,happiness:90,energy:90,hygiene:90,bond:10};
@@ -77,6 +78,7 @@ test('illustrated catalog serves the actual four GIF files without the old rende
       assert.deepEqual(art.buffer,original);
       const frames=await decodePetSprite(original);
       assert.ok(frames.length>=4);
+      assert.ok(frames.reduce((sum,f)=>sum+f.delay,0)>=4000);
     }
     const art=await renderPetWorld(pet,{theme:'neon',view:'room',action:'acariciar'});
     assert.equal(art.illustrated,true);assert.equal(art.ext,'gif');
@@ -111,5 +113,21 @@ test('catalog migration retires old pets and transfers ownership and progression
     await prisma.economy.deleteMany({where:{userId,guildId}});
     await prisma.pet.deleteMany({where:{guildId}});
     await prisma.$disconnect();
+  }
+});
+
+test('portrait and room stay distinct; away panel retains a real GIF',async()=>{
+  for(const species of ['luna','koda']){
+    const pet={id:'pw2-'+species+'-test',name:species,emoji:'🐾'};
+    const portrait=await decodePetSprite(getPetIllustration(pet.id,'portrait'));
+    const room=await decodePetSprite(getPetIllustration(pet.id,'room'));
+    assert.ok(portrait[0].image.getContext('2d').getImageData(0,0,1,1).data[3]<128,'shop portrait must have transparent corners');
+    assert.equal(room[0].image.getContext('2d').getImageData(0,0,1,1).data[3],255);
+    const world={pet,life:{...sample,careAt:new Date(),xp:0,room:'neon',ownedRooms:'neon',adventureUntil:new Date(Date.now()+600000)},eco:{}};
+    const payload=await buildWorldPayload(world,{owner:'123456789012345678',view:'room'});
+    assert.equal(payload.files.length,1);
+    assert.equal(payload.files[0].name,'pet-world.gif');
+    assert.deepEqual(payload.files[0].attachment,getPetIllustration(pet.id,'room'));
+    assert.ok(JSON.stringify(payload.components.map(c=>c.toJSON())).includes('attachment://pet-world.gif'));
   }
 });
