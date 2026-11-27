@@ -4,7 +4,7 @@ import prisma from '../database/client.js';
 const button=(id,icon,label)=>{const b=new ButtonBuilder().setCustomId(id).setStyle(ButtonStyle.Secondary).setEmoji(getEmoji(icon));if(label!==undefined)b.setLabel(String(label));return b;};
 export function buildInstaPost({postId,authorId,content='',imageUrl,likes=0,dislikes=0}){
  const c=new ContainerBuilder().setAccentColor(0xffffff);
- c.addTextDisplayComponents(new TextDisplayBuilder().setContent(getEmoji('insta_comment')+' **postador por:** <@'+authorId+'>'+(content?'\n'+content:'')));
+ c.addTextDisplayComponents(new TextDisplayBuilder().setContent(getEmoji('insta_white_header')+' **postador por:** <@'+authorId+'>'+(content?'\n'+content:'')));
  c.addSeparatorComponents(new SeparatorBuilder());
  c.addMediaGalleryComponents(new MediaGalleryBuilder().addItems(new MediaGalleryItemBuilder().setURL(imageUrl)));
  c.addSeparatorComponents(new SeparatorBuilder());
