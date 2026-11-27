@@ -380,7 +380,9 @@ let workerTail=Promise.resolve(),queued=0;
 function renderInWorker(pet,opts){
   if(queued>=8)return Promise.reject(Error('Pet animation queue full'));
   queued++;
+  const deadline=Date.now()+20000;
   const job=workerTail.catch(()=>{}).then(()=>new Promise((resolve,reject)=>{
+    const budget=deadline-Date.now();if(budget<3000){reject(Error('Pet animation queue deadline exceeded'));return;}
     const worker=new Worker(new URL('./petMediaWorker.js',import.meta.url),{workerData:{pet,opts}});
     let settled=false;
     const finish=(error,result)=>{
@@ -388,13 +390,14 @@ function renderInWorker(pet,opts){
       worker.terminate().catch(()=>{});
       if(error)reject(error);else resolve({...result,buffer:Buffer.from(result.buffer)});
     };
-    const timer=setTimeout(()=>finish(Error('Pet animation timed out')),25000);
+    const timer=setTimeout(()=>finish(Error('Pet animation timed out')),budget);
     worker.once('message',msg=>msg.error?finish(Error(msg.error)):finish(null,msg.result));
     worker.once('error',error=>finish(error));
     worker.once('exit',code=>finish(Error('Pet animation worker exited: '+code)));
   }));
   workerTail=job.finally(()=>{queued--;});workerTail.catch(()=>{});
-  return job;
+  let timer;
+  return Promise.race([job,new Promise((_,reject)=>{timer=setTimeout(()=>reject(Error('Pet animation wait expired')),20000);})]).finally(()=>clearTimeout(timer));
 }
 export async function renderPetWorld(pet,opts={}){
   if(opts.spriteBuffer)return render(pet,opts);
