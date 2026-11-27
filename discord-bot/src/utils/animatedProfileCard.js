@@ -140,7 +140,7 @@ export async function generateAnimatedProfileCard(params) {
   }
   const hasEffect=!['off','banner'].includes(effect);
   if(!gifFrames.length&&!hasEffect)throw new Error('Não há animação selecionada para este banner.');
-  const count=hasEffect?12:gifFrames.length;
+  const count=hasEffect?(params._compactMotion?15:30):gifFrames.length;
   const base=gifFrames.length?null:await generateProfileCard({...params,_resolvedBanner:banner,_returnCanvas:true});
   const bases=new Map();
   const encoder=new GifEncoder(W,H,{repeat:0,quality:8});
@@ -151,11 +151,11 @@ export async function generateAnimatedProfileCard(params) {
       if(f&&!bases.has(index))bases.set(index,await generateProfileCard({...params,_bannerImage:f.image,_resolvedBanner:banner,_returnCanvas:true}));
       const frame=createCanvas(W,H),ctx=frame.getContext('2d');
       ctx.drawImage(base??bases.get(index),0,0);
-      if(hasEffect)drawProfileEffect(ctx,appearance,i/count);
-      encoder.addFrame(new Uint8Array(ctx.getImageData(0,0,W,H).data.buffer),W,H,{delay:hasEffect?140:f.delayMs});
+      if(hasEffect)drawProfileEffect(ctx,appearance,i/count,base??bases.get(index));
+      encoder.addFrame(new Uint8Array(ctx.getImageData(0,0,W,H).data.buffer),W,H,{delay:hasEffect?(params._compactMotion?400:200):f.delayMs});
     }
     const result=encoder.finish();
-    if(result.length>8*1024*1024)throw new Error('GIF de perfil excedeu 8 MB');
+    if(result.length>8*1024*1024){if(hasEffect&&!params._compactMotion)return generateAnimatedProfileCard({...params,_resolvedBanner:banner,_compactMotion:true});throw new Error('GIF de perfil excedeu 8 MB');}
     return result;
   }finally{encoder.dispose();}
 }
