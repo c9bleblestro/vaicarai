@@ -4,7 +4,7 @@ import {createCanvas,loadImage,GifEncoder} from '@napi-rs/canvas';
 import {parseGIF,decompressFrames} from 'gifuct-js';
 import prisma,{ensureProfileStudioSchema} from '../src/database/client.js';
 import {generateProfileCard} from '../src/utils/profileCard.js';
-import {generateAnimatedProfileCard} from '../src/utils/animatedProfileCard.js';
+import {generateAnimatedProfileCard,buildMotionTimeline} from '../src/utils/animatedProfileCard.js';
 import {renderProfileAttachment} from '../src/commands/general/perfil.js';
 import {PROFILE_THEMES,PROFILE_EFFECTS,PROFILE_DECORS,normalizeAppearance} from '../src/utils/profileStudioArt.js';
 import {buildProfileStudioPayload,saveProfileAppearance,profileAppearance} from '../src/utils/profileStudio.js';
@@ -43,7 +43,7 @@ test('animação desligada por padrão, PNG mesmo com banner GIF, efeitos geram 
   // Effects also work without a GIF banner.
   const effect=await generateAnimatedProfileCard({...params,appearance:{theme:'rose',effect:'sparkle'},_resolvedBanner:{gradient:['#221122','#442244']}});
   const frames=framesOf(effect);
-  assert.ok(frames.length>=15);assert.ok(frames.reduce((sum,f)=>sum+f.delay,0)>=5500);assert.ok(frames.some((frame,index)=>index>0&&!Buffer.from(frame.patch).equals(Buffer.from(frames[0].patch))),'GIF deve ter frames visualmente distintos');
+  assert.ok(frames.length>=24);assert.ok(Math.abs(frames.reduce((sum,f)=>sum+f.delay,0)-2400)<=100);assert.ok(frames.some((frame,index)=>index>0&&!Buffer.from(frame.patch).equals(Buffer.from(frames[0].patch))),'GIF deve ter frames visualmente distintos');
   assert.ok(effect.length<=8*1024*1024);
 });
 test('estúdio oferece opções, valida seleção e salva somente a preferência escolhida',async()=>{
@@ -83,4 +83,14 @@ test('layout novo preserva o banner à esquerda e o avatar real à direita',asyn
   assert.notDeepEqual([...result.getImageData(659,124,1,1).data],[17,204,119,255]);
   assert.ok(Object.hasOwn(PROFILE_EFFECTS,'dream'));
   assert.ok(Object.hasOwn(PROFILE_EFFECTS,'aurora'));
+});
+
+test('relógio do GIF respeita os delays originais e efeitos não esticam banner',()=>{
+  const source=[{delayMs:40},{delayMs:80},{delayMs:120}];
+  assert.deepEqual(buildMotionTimeline(source,false).map(x=>x.delayMs),[40,80,120]);
+  const motion=buildMotionTimeline(source,true,40);
+  assert.deepEqual(motion.slice(0,7).map(x=>x.index),[0,1,1,2,2,2,0]);
+  assert.equal(motion.reduce((sum,x)=>sum+x.delayMs,0)%240,0);
+  assert.ok(motion.every(x=>x.delayMs>=20));
+  assert.equal(buildMotionTimeline([],true,40).length,60);
 });
