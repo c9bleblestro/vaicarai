@@ -1,5 +1,6 @@
 import {ActionRowBuilder,ButtonBuilder,ButtonStyle,StringSelectMenuBuilder,ModalBuilder,TextInputBuilder,TextInputStyle,MessageFlags,AttachmentBuilder} from 'discord.js';
 import prisma from '../database/client.js';
+import {ECONOMY_COSMETICS} from './economyProgress.js';
 import {PROFILE_THEMES,PROFILE_EFFECTS,PROFILE_DECORS,normalizeAppearance} from './profileStudioArt.js';
 const PRIVATE=MessageFlags.Ephemeral;
 const allowedMentions={parse:[],repliedUser:false};
@@ -12,19 +13,24 @@ export async function saveProfileAppearance(userId,guildId,key,value,db=prisma){
     if(typeof value!=='string'||value.length>42)throw Error('Assinatura inválida.');
     value=normalizeAppearance({signature:value}).signature||null;
   }else if(!groups[key]||!Object.hasOwn(groups[key].options,value))throw Error('Opção inválida.');
+  if(key==='decor'&&Object.hasOwn(ECONOMY_COSMETICS,value)){
+    const owned=await db.userPurchase.findUnique({where:{userId_itemType_itemRef:{userId,itemType:'economy_cosmetic',itemRef:value}}});
+    if(!owned)throw Error('Decoração ainda não conquistada.');
+  }
   const data={[key==='signature'?'profileSignature':groups[key].field]:value};
   return db.userProfile.upsert({where:{userId},create:{userId,guildId,...data},update:data});
 }
 const row=(...components)=>new ActionRowBuilder().addComponents(...components);
 const label=v=>typeof v==='string'?v:v.name;
-export function buildProfileStudioPayload(userId,profile){
+export function buildProfileStudioPayload(userId,profile,owned=[]){
   const a=profileAppearance(profile);
-  const select=(key,title)=>row(new StringSelectMenuBuilder().setCustomId('profile_studio:'+key+':'+userId).setPlaceholder(title).addOptions(Object.entries(groups[key].options).map(([value,name])=>({label:label(name),value,default:a[key]===value}))));
+  const select=(key,title)=>row(new StringSelectMenuBuilder().setCustomId('profile_studio:'+key+':'+userId).setPlaceholder(title).addOptions(Object.entries(groups[key].options).filter(([v])=>key!=='decor'||!Object.hasOwn(ECONOMY_COSMETICS,v)||owned.includes(v)).map(([value,name])=>({label:label(name),value,default:a[key]===value}))));
   return {content:'## ✧ Estúdio de perfil\nEscolha seu visual. O novo cartão tem avatar à direita, flores, brilho nas estatísticas e efeitos fluidos e banner com velocidade original. As alterações são salvas apenas no seu perfil.\n**Tema:** '+PROFILE_THEMES[a.theme].name+' • **Animação:** '+PROFILE_EFFECTS[a.effect]+'\n**Decoração:** '+PROFILE_DECORS[a.decor]+'\n-# Suas cores personalizadas de fundo e painel têm prioridade sobre o tema. O clássico mantém o layout anterior, sem decoração ou assinatura nova. O efeito Sonho combina brilhos e pétalas; Aurora anima os contornos.\n-# Banner, argola, moldura VIP, pet, conquistas e cores continuam no menu original. Use Atualizar no perfil público para aplicar as escolhas.',components:[
     select('theme','Escolha um tema'),select('effect','Escolha uma animação'),select('decor','Escolha uma decoração'),
     row(new ButtonBuilder().setCustomId('profile_studio:signature:'+userId).setLabel('Assinatura').setStyle(ButtonStyle.Secondary),new ButtonBuilder().setCustomId('profile_studio:preview:'+userId).setLabel('Prévia real').setStyle(ButtonStyle.Primary),new ButtonBuilder().setCustomId('profile_studio:reset:'+userId).setLabel('Restaurar visual').setStyle(ButtonStyle.Secondary))
   ],allowedMentions};
 }
+async function ownedDecor(userId){return (await prisma.userPurchase.findMany({where:{userId,itemType:'economy_cosmetic'},select:{itemRef:true}})).map(r=>r.itemRef);}
 export async function handleProfileStudio(i){
   if(!i.guildId)return i.reply({content:'Use no servidor.',flags:PRIVATE});
   const [,action,owner]=i.customId.split(':');
@@ -33,7 +39,7 @@ export async function handleProfileStudio(i){
   if(i.customId==='profile_menu'){
     // profile_menu is shared with the old shop; only this user's preferences can be edited.
     await i.deferReply({flags:PRIVATE});
-    return i.editReply(buildProfileStudioPayload(i.user.id,await prisma.userProfile.findUnique({where})));
+    return i.editReply(buildProfileStudioPayload(i.user.id,await prisma.userProfile.findUnique({where}),await ownedDecor(i.user.id)));
   }
   if(action==='signature'&&i.isButton()){
     const input=new TextInputBuilder().setCustomId('signature').setLabel('Assinatura (vazio para remover)').setStyle(TextInputStyle.Short).setMaxLength(42).setRequired(false);
@@ -51,13 +57,16 @@ export async function handleProfileStudio(i){
   if(action==='signature'&&i.isModalSubmit()){
     await i.deferReply({flags:PRIVATE});
     const p=await saveProfileAppearance(i.user.id,i.guildId,'signature',i.fields.getTextInputValue('signature'));
-    return i.editReply(buildProfileStudioPayload(i.user.id,p));
+    return i.editReply(buildProfileStudioPayload(i.user.id,p,await ownedDecor(i.user.id)));
   }
   await i.deferUpdate();
   let p;
   if(action==='reset'){
     const data={profileTheme:'rose',profileEffect:'off',profileDecor:'floral',profileSignature:null};
     p=await prisma.userProfile.upsert({where,create:{userId:i.user.id,guildId:i.guildId,...data},update:data});
-  }else p=await saveProfileAppearance(i.user.id,i.guildId,action,i.values?.[0]);
-  return i.editReply(buildProfileStudioPayload(i.user.id,p));
+  }else {
+    try{p=await saveProfileAppearance(i.user.id,i.guildId,action,i.values?.[0]);}
+    catch(error){return i.followUp({content:error.message,flags:PRIVATE});}
+  }
+  return i.editReply(buildProfileStudioPayload(i.user.id,p,await ownedDecor(i.user.id)));
 }
