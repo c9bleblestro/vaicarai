@@ -101,7 +101,7 @@ export function petDisplayName(pet, emojiSource = null) {
   return `${resolvePetEmoji(petEmojiValue(pet), emojiSource)} ${pet.name}`;
 }
 
-function petThumbnailUrl(pet) {
+export function petThumbnailUrl(pet) {
   return pet?.imageUrl || getPetEmojiUrl(petEmojiValue(pet));
 }
 

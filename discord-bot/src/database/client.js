@@ -653,4 +653,21 @@ export async function ensureProfileStudioSchema() {
     ADD COLUMN IF NOT EXISTS "profileSignature" TEXT`;
 }
 
+export async function ensurePetLifeSchema() {
+  await prisma.$executeRaw`
+    CREATE TABLE IF NOT EXISTS "PetLife" (
+      "userId" TEXT NOT NULL, "guildId" TEXT NOT NULL, "petId" TEXT NOT NULL,
+      "xp" INTEGER NOT NULL DEFAULT 0, "fullness" INTEGER NOT NULL DEFAULT 90,
+      "happiness" INTEGER NOT NULL DEFAULT 90, "energy" INTEGER NOT NULL DEFAULT 90,
+      "hygiene" INTEGER NOT NULL DEFAULT 90, "bond" INTEGER NOT NULL DEFAULT 0,
+      "careAt" TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP,
+      "lastBath" TIMESTAMP(3), "lastNap" TIMESTAMP(3), "adventureUntil" TIMESTAMP(3),
+      "room" TEXT NOT NULL DEFAULT 'neon', "ownedRooms" TEXT NOT NULL DEFAULT 'neon',
+      "revision" INTEGER NOT NULL DEFAULT 0,
+      PRIMARY KEY ("userId","guildId","petId")
+    )
+  `;
+  await prisma.$executeRaw`CREATE INDEX IF NOT EXISTS "PetLife_guildId_xp_idx" ON "PetLife" ("guildId","xp")`;
+}
+
 export default prisma;
