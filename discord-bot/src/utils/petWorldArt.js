@@ -1,5 +1,8 @@
 import {createCanvas,loadImage,GifEncoder} from '@napi-rs/canvas';
 import {parseGIF,decompressFrames} from 'gifuct-js';
+import {readFile} from 'node:fs/promises';
+import {fileURLToPath} from 'node:url';
+import {join} from 'node:path';
 import {petThumbnailUrl} from './petComponents.js';
 const W=600,H=400,TAU=2*Math.PI;
 const THEMES={
@@ -9,7 +12,7 @@ const THEMES={
 };
 const safeTheme=t=>THEMES[t]??THEMES.neon;
 const imageCache=new Map(),gifCache=new Map(),inflight=new Map();
-const round=(ctx,x,y,w,h,r)=>{ctx.beginPath();ctx.roundRect(x,y,w,h,r);};
+const round=(ctx,x,y,w,h,r)=>{ctx.beginPath();ctx.moveTo(x+r,y);ctx.arcTo(x+w,y,x+w,y+h,r);ctx.arcTo(x+w,y+h,x,y+h,r);ctx.arcTo(x,y+h,x,y,r);ctx.arcTo(x,y,x+w,y,r);ctx.closePath();};
 const ellipse=(ctx,x,y,rx,ry,fill)=>{ctx.beginPath();ctx.ellipse(x,y,rx,ry,0,0,TAU);ctx.fillStyle=fill;ctx.fill();};
 function rect(ctx,x,y,w,h,r,fill){round(ctx,x,y,w,h,r);ctx.fillStyle=fill;ctx.fill();}
 function glow(ctx,x,y,r,c,a=1){
@@ -245,12 +248,30 @@ async function render(pet,{theme='neon',view='room',action='idle',spriteBuffer=n
   drawMotion(ctx,bg,frames,pet,theme,view,action,.5,1200);
   return {buffer:c.toBuffer('image/png'),ext:'png',sourceAnimated:frames.length>1,sourceFound:frames.length>0,fps:0};
 }
+// Art packs are keyed by the real catalog id, never by a guessed species or name.
+const artRoot=fileURLToPath(new URL('../assets/pet-world/',import.meta.url));
+async function localClip(pet,opts){
+  const id=String(pet.id??''),view=opts.view==='portrait'?'portrait':'room';
+  const theme=Object.hasOwn(THEMES,opts.theme)?opts.theme:'neon';
+  const action=String(opts.action??'idle');
+  if(!/^[a-zA-Z0-9_-]{1,64}$/.test(id)||!['idle','brincar','alimentar','acariciar','banho','dormir','aventura','coletar','away'].includes(action))return null;
+  // Each optional clip is a finished, pre-rendered scene for this exact action.
+  // Never show an idle illustration in place of an interaction or another pet.
+  const name=view==='portrait'?'portrait-'+action+'.gif':'room-'+theme+'-'+action+'.gif';
+  try{
+    const buffer=await readFile(join(artRoot,id,name));
+    if(buffer.length<20||buffer.length>8*1024*1024||buffer.subarray(0,3).toString()!=='GIF')return null;
+    const parsed=parseGIF(buffer.buffer.slice(buffer.byteOffset,buffer.byteOffset+buffer.byteLength));
+    if(parsed.frames.filter(f=>f.image).length<2||parsed.lsd.width*parsed.lsd.height>2e6)return null;
+    return {buffer,ext:'gif',sourceAnimated:true,sourceFound:true,fps:null};
+  }catch{return null;}
+}
 export async function renderPetWorld(pet,opts={}){
   if(opts.spriteBuffer)return render(pet,opts);
   const key=JSON.stringify([pet.id,pet.imageUrl,pet.emoji,opts.theme,opts.view,opts.action]);
   const found=gifCache.get(key);if(found&&found.expires>Date.now())return found.result;
   if(found)gifCache.delete(key);
   if(inflight.has(key))return inflight.get(key);
-  const pending=render(pet,opts).then(result=>{if(result.sourceFound||!petThumbnailUrl(pet))cachePut(key,result);return result;}).finally(()=>inflight.delete(key));
+  const pending=localClip(pet,opts).then(clip=>clip??render(pet,opts)).then(result=>{if(result.sourceFound||!petThumbnailUrl(pet))cachePut(key,result);return result;}).finally(()=>inflight.delete(key));
   inflight.set(key,pending);return pending;
 }
