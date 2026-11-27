@@ -626,7 +626,7 @@ export default {
         }
       }
 
-      if ((interaction.isButton() || interaction.isModalSubmit() || interaction.isStringSelectMenu()) && interaction.customId.startsWith('fm:')) return handleFmInteraction(interaction);
+      if ((interaction.isButton() || interaction.isModalSubmit() || interaction.isStringSelectMenu() || interaction.isUserSelectMenu()) && interaction.customId.startsWith('fm:')) return handleFmInteraction(interaction);
       if (interaction.isButton() && await handleDeathEventInteraction(interaction, client)) return;
       if (interaction.isButton() && interaction.customId.startsWith('foguinho_page:')) {
         return await handleStreakCollectionPage(interaction);

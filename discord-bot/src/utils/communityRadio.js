@@ -134,7 +134,8 @@ export class CommunityRadioSession {
     this.requesting.add(userId);this.requestTimes.set(userId,Date.now());
     if(this.requestTimes.size>1000)for(const [id,t] of this.requestTimes)if(Date.now()-t>60000)this.requestTimes.delete(id);
     try{
-      const info=await timeout(getTrackInfo(query.trim()),25000);
+      let info;
+      try{info=await timeout(getTrackInfo(query.trim()),25000);}catch{throw new Error('Não encontrei uma faixa disponível. Tente outro nome ou link.');}
       if(!validTrackUrl(info.url))throw new Error('A busca não retornou uma fonte de áudio compatível.');
       if(durationSeconds(info.duration)>900)throw new Error('Escolha uma faixa de até 15 minutos.');
       const item={id:randomUUID(),requesterId:userId,requesterName:clip(name,80),recipientName:recipientName?clip(recipientName,80):null,
@@ -217,7 +218,8 @@ export class CommunityRadioSession {
         }
         this.current=null;
       }else{
-        this.phase='station';this.liveKey=stationKey(this.config.station);this.refresh();
+        this.phase='station';if(this.queue.length)continue;
+        this.liveKey=stationKey(this.config.station);this.refresh();
         let outcome='failed';try{outcome=await this.playManaged(openStation(PLAYLISTS[this.liveKey].streamUrl));}catch(error){console.warn('[FM] Estação:',error?.message??error);}
         if(!this.stopped&&['failed','ended'].includes(outcome)){
           this.lastError='Fonte temporariamente indisponível';this.refresh();await sleep(4000);
