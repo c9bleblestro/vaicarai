@@ -1,7 +1,9 @@
 import {createCanvas,loadImage} from '@napi-rs/canvas';
+import {drawNewProfileEffect,drawGraphiteIcon} from './profileMotionEffects.js';
 import {ECONOMY_COSMETICS} from './economyProgress.js';
 
 export const PROFILE_THEMES={
+  graphite:{name:'Grafite — padrão',bg:['#10151b','#1b222b'],panel:'#252d36',accent:'#91a9bf',light:'#d6eaff'},
   rose:{name:'Rosa noturno',bg:['#211520','#382233'],panel:'#382733',accent:'#f3a0c5',light:'#ffe0ed'},
   blush:{name:'Rosa pastel',bg:['#fff3f5','#f4dce6'],panel:'#fff5f8',accent:'#bb527b',light:'#fff9fb'},
   lilac:{name:'Lilás lunar',bg:['#201a33','#3f315b'],panel:'#362c4a',accent:'#c5b1ff',light:'#f0eaff'},
@@ -10,12 +12,12 @@ export const PROFILE_THEMES={
   cream:{name:'Baunilha',bg:['#fff6e6','#f2e0ca'],panel:'#fff8ec',accent:'#a96a62',light:'#fff9f2'},
   classic:{name:'Clássico',bg:['#202124','#2b2d30'],panel:'#1c1e21',accent:'#bd42ef',light:'#ffffff'}
 };
-export const PROFILE_EFFECTS={off:'Desativada (PNG)',banner:'Somente banner GIF',sparkle:'Brilhos e ícones animados',petals:'Pétalas flutuantes',hearts:'Corações flutuantes',dream:'Sonho — brilho, estrelas e pétalas',aurora:'Aurora — luz em movimento'};
+export const PROFILE_EFFECTS={off:'Desativada (PNG)',banner:'Somente banner GIF',sparkle:'Brilhos e ícones animados',petals:'Pétalas flutuantes',hearts:'Corações flutuantes',dream:'Sonho — brilho, estrelas e pétalas',aurora:'Aurora — luz em movimento',butterflies:'Borboletas encantadas',reflection:'Reflexo luminoso'};
 export const PROFILE_DECORS={floral:'Flores delicadas',cat:'Gatinho',stars:'Estrelas',bow:'Laços',none:'Minimalista',...ECONOMY_COSMETICS};
 export function normalizeAppearance(value={}){
   value=value??{};
   const pick=(key,options,fallback)=>typeof key==='string'&&Object.hasOwn(options,key)?key:fallback;
-  return {theme:pick(value.theme,PROFILE_THEMES,'rose'),effect:pick(value.effect,PROFILE_EFFECTS,'off'),decor:pick(value.decor,PROFILE_DECORS,'floral'),signature:String(value.signature??'').replace(/[\x00-\x1f\x7f]/g,' ').trim().slice(0,42)};
+  return {theme:pick(value.theme,PROFILE_THEMES,'graphite'),effect:pick(value.effect,PROFILE_EFFECTS,'off'),decor:pick(value.decor,PROFILE_DECORS,'none'),signature:String(value.signature??'').replace(/[\x00-\x1f\x7f]/g,' ').trim().slice(0,42)};
 }
 const W=800,H=600;
 const color=(value,fallback)=>typeof value==='string'&&/^#[0-9a-f]{6}$/i.test(value)?value:fallback;
@@ -70,11 +72,12 @@ function decorations(ctx,decor,t){
   else if(decor==='stars'){ctx.fillStyle=t.accent;for(const [x,y,r] of [[24,23,10],[773,24,9],[774,576,12],[25,575,8]])star(ctx,x,y,r);}
   ctx.restore();
 }
-function fit(ctx,text,x,y,w,size,fill,bold=true){
+function fit(ctx,text,x,y,w,size,fill,bold=true,mask=null){
   let s=String(text??'');let n=size;ctx.fillStyle=fill;ctx.font=(bold?'bold ':'')+n+'px BotFont';
   while(n>13&&ctx.measureText(s).width>w){n--;ctx.font=(bold?'bold ':'')+n+'px BotFont';}
   if(ctx.measureText(s).width>w){const chars=Array.from(s);while(chars.length&&ctx.measureText(chars.join('')+'…').width>w)chars.pop();s=chars.join('')+'…';}
   ctx.fillText(s,x,y);
+  if(mask){mask.font=ctx.font;mask.textAlign=ctx.textAlign;mask.textBaseline=ctx.textBaseline;mask.fillStyle='#ffffff';mask.fillText(s,x,y);}
 }
 function cover(ctx,img,x,y,w,h){
   const scale=Math.max(w/img.width,h/img.height);ctx.drawImage(img,x+(w-img.width*scale)/2,y+(h-img.height*scale)/2,img.width*scale,img.height*scale);
@@ -106,24 +109,26 @@ export async function drawStudioProfile(p,h){
   const a=normalizeAppearance(p.appearance),t=PROFILE_THEMES[a.theme];
   const bg1=color(p.cardBg1,t.bg[0]),bg2=color(p.cardBg2,p.cardBg1?bg1:t.bg[1]),panel=color(p.cardPanelColor,t.panel);
   const dark=h.isColorDark(bg1),pdark=h.isColorDark(panel);
-  const ink=dark?'#fff1f7':'#432c3b',panelInk=pdark?'#fff1f7':'#432c3b';
+  const ink=dark?(a.theme==='graphite'?'#e8eef6':'#fff1f7'):(a.theme==='graphite'?'#28333f':'#432c3b'),panelInk=pdark?(a.theme==='graphite'?'#cbd8e6':'#fff1f7'):(a.theme==='graphite'?'#34465a':'#432c3b');
   const canvas=createCanvas(W,H),ctx=canvas.getContext('2d');
+  const textMask=a.effect==='reflection'?createCanvas(W,H):null;
+  const mask=textMask?.getContext('2d')??null;
+  const write=(text,x,y,w,size,fill,bold=true)=>fit(ctx,text,x,y,w,size,fill,bold,mask);
   const g=ctx.createLinearGradient(0,0,W,H);g.addColorStop(0,bg1);g.addColorStop(1,bg2);ctx.fillStyle=g;ctx.fillRect(0,0,W,H);
   if(!p.cardBg1&&!p.cardBg2){
-    glow(ctx,695,150,230,t.accent,dark?.20:.24);glow(ctx,85,460,230,t.accent,.12);
-    ctx.save();ctx.globalAlpha=.10;ctx.strokeStyle=t.accent;ctx.lineWidth=1;
+    glow(ctx,695,150,230,t.accent,a.theme==='graphite'?.09:dark?.20:.24);glow(ctx,85,460,230,t.accent,a.theme==='graphite'?.05:.12);
+    ctx.save();ctx.globalAlpha=a.theme==='graphite'?.025:.10;ctx.strokeStyle=t.accent;ctx.lineWidth=1;
     for(let y=18;y<H;y+=25)for(let x=18;x<W;x+=25){ctx.beginPath();ctx.arc(x,y,.8,0,tau);ctx.stroke();}
     ctx.restore();
   }
   const frame=(x,y,w,hh,r=20)=>{
-    ctx.save();ctx.shadowColor='#140a1930';ctx.shadowBlur=10;ctx.shadowOffsetY=4;
+    ctx.save();ctx.shadowColor='#140a1930';ctx.shadowBlur=6;ctx.shadowOffsetY=2;
     h.roundRect(ctx,x,y,w,hh,r);ctx.fillStyle=panel;ctx.fill();ctx.restore();
     ctx.save();h.roundRect(ctx,x,y,w,hh,r);ctx.clip();
-    const shine=ctx.createLinearGradient(x,y,x,y+hh);shine.addColorStop(0,'#ffffff18');shine.addColorStop(.50,'#ffffff00');shine.addColorStop(1,'#00000010');ctx.fillStyle=shine;ctx.fillRect(x,y,w,hh);
-    ctx.restore();h.roundRect(ctx,x,y,w,hh,r);ctx.strokeStyle=t.accent+'99';ctx.lineWidth=1.2;ctx.stroke();
-    h.roundRect(ctx,x+3,y+3,w-6,hh-6,Math.max(4,r-3));ctx.strokeStyle=t.light+'28';ctx.lineWidth=1;ctx.stroke();
+    const shine=ctx.createLinearGradient(x,y,x,y+hh);shine.addColorStop(0,'#ffffff10');shine.addColorStop(.50,'#ffffff00');shine.addColorStop(1,'#0000000a');ctx.fillStyle=shine;ctx.fillRect(x,y,w,hh);
+    ctx.restore();h.roundRect(ctx,x,y,w,hh,r);ctx.strokeStyle=t.accent+'78';ctx.lineWidth=1;ctx.stroke();
   };
-  h.roundRect(ctx,7,7,786,586,26);ctx.strokeStyle=t.accent+'88';ctx.lineWidth=1.4;ctx.stroke();
+  h.roundRect(ctx,7,7,786,586,26);ctx.strokeStyle=t.accent+'88';ctx.lineWidth=1.2;ctx.stroke();
   const [bx,by,bw,bh]=L.banner;
   const banner=p._bannerImage?null:p._resolvedBanner??await h.resolveBanner(p.activeBanner,p.guildId,{includeImageData:true});
   let bannerImage=p._bannerImage;
@@ -136,8 +141,8 @@ export async function drawStudioProfile(p,h){
     const colors=banner?.gradient??[bg1,bg2],gradient=ctx.createLinearGradient(bx,by,bx+bw,by+bh);gradient.addColorStop(0,colors[0]);gradient.addColorStop(1,colors[1]);ctx.fillStyle=gradient;ctx.fillRect(bx,by,bw,bh);
     glow(ctx,282,80,170,t.accent,.34);glow(ctx,480,160,140,t.light,.18);
     ctx.save();ctx.strokeStyle=t.light;ctx.globalAlpha=.22;ctx.lineWidth=1.2;
-    for(let i=0;i<6;i++){ctx.beginPath();ctx.moveTo(bx-30,by+24+i*14);ctx.bezierCurveTo(170,by+165-i*8,340,by-40+i*11,560,by+40+i*15);ctx.stroke();}ctx.restore();
-    for(let i=0;i<25;i++){const x=40+(i*79)%485,y=36+(i*47)%125;twinkle(ctx,x,y,i%5===0?5:1.8,t.light,.35+(i%3)*.17);}
+    for(let i=0;i<(a.theme==='graphite'?3:6);i++){ctx.beginPath();ctx.moveTo(bx-30,by+24+i*14);ctx.bezierCurveTo(170,by+165-i*8,340,by-40+i*11,560,by+40+i*15);ctx.stroke();}ctx.restore();
+    for(let i=0;i<(a.theme==='graphite'?0:25);i++){const x=40+(i*79)%485,y=36+(i*47)%125;twinkle(ctx,x,y,i%5===0?5:1.8,t.light,.35+(i%3)*.17);}
     if(a.decor==='floral'){botanical(ctx,36,141,.9,t);botanical(ctx,528,51,.9,t,-1);}
     if(a.decor==='cat'){cat(ctx,215,103,36,t.accent,t.light);cat(ctx,290,104,34,t.accent,t.light);ctx.fillStyle=t.accent;heart(ctx,252,61,10);}
     if(a.decor==='bow'){bow(ctx,100,90,31,t.accent,t.light);bow(ctx,465,90,31,t.accent,t.light);}
@@ -145,12 +150,12 @@ export async function drawStudioProfile(p,h){
   ctx.restore();if(background)ctx.clearRect(0,0,W,H);
   h.roundRect(ctx,bx,by,bw,bh,20);ctx.strokeStyle=t.accent;ctx.lineWidth=1.5;ctx.stroke();
   const [cx,cy,r]=L.avatar;
-  glow(ctx,cx,cy,115,t.accent,.27);
+  glow(ctx,cx,cy,115,t.accent,a.theme==='graphite'?.16:.27);
   const ring=ctx.createLinearGradient(cx-r,cy-r,cx+r,cy+r);ring.addColorStop(0,t.light);ring.addColorStop(.48,color(p.ringBorderColor,t.accent));ring.addColorStop(1,t.light);
-  disk(ctx,cx,cy,r+9,ring);disk(ctx,cx,cy,r+5,bg1);
+  disk(ctx,cx,cy,r+(a.theme==='graphite'?5:9),ring);disk(ctx,cx,cy,r+(a.theme==='graphite'?2:5),bg1);
   if(p.activeRing)await h.drawAvatarRing(ctx,cx,cy,r+3,p.activeRing);
   ctx.save();ctx.beginPath();ctx.arc(cx,cy,r,0,tau);ctx.clip();
-  try{cover(ctx,await h.loadUrl(p.avatarUrl),cx-r,cy-r,2*r,2*r);}catch{ctx.fillStyle=panel;ctx.fillRect(cx-r,cy-r,2*r,2*r);ctx.fillStyle=t.accent;ctx.font='bold 60px BotFont';ctx.textAlign='center';ctx.fillText(Array.from(p.username||'?')[0],cx,cy+20);}
+  try{cover(ctx,await h.loadUrl(p.avatarUrl),cx-r,cy-r,2*r,2*r);}catch{ctx.fillStyle=panel;ctx.fillRect(cx-r,cy-r,2*r,2*r);ctx.fillStyle=t.accent;ctx.beginPath();ctx.arc(cx,cy-23,24,0,tau);ctx.fill();ctx.beginPath();ctx.ellipse(cx,cy+39,47,29,0,Math.PI,2*Math.PI);ctx.closePath();ctx.fill();}
   ctx.restore();
   if(a.decor==='floral'){botanical(ctx,566,194,.44,t);botanical(ctx,752,62,.43,t,-1);}
   else if(a.decor==='bow')bow(ctx,660,37,19,t.accent,t.light);
@@ -158,23 +163,27 @@ export async function drawStudioProfile(p,h){
   else if(a.decor==='stars'){twinkle(ctx,569,52,10,t.light);twinkle(ctx,747,198,11,t.accent);}
   if(p.activePet){const pet=await h.loadEmojiImg(p.activePet).catch(()=>null);if(pet){disk(ctx,724,189,20,panel);ctx.strokeStyle=t.accent;ctx.stroke();ctx.drawImage(pet,710,175,28,28);}}
   ctx.textAlign='left';ctx.textBaseline='alphabetic';
-  fit(ctx,p.username,34,211,504,34,ink);
+  write(p.username,34,211,504,34,ink);
   frame(24,223,516,44,17);
   ctx.save();h.roundRect(ctx,31,227,502,36,13);ctx.clip();ctx.font='16px BotFont';ctx.fillStyle=panelInk;
   await h.drawBioWithEmojis(ctx,p.bio||'Personalize sua bio no bot.',34,250,496,19,16);ctx.restore();
-  ctx.save();ctx.textAlign='center';fit(ctx,'PERFIL SOCIAL',659,249,220,14,ink,false);ctx.restore();
+  ctx.save();ctx.textAlign='center';write('PERFIL SOCIAL',659,249,220,14,ink,false);ctx.restore();
   const level=p.chatLevel?{level:p.chatLevel.level,current:p.chatLevel.current,needed:p.chatLevel.required}:h.computeLevel(p.xp);
   const stats=[['Nível',String(level.level)],['XP',level.current+'/'+level.needed],['Reputação',String(p.reps??0)],['Coins',h.fmtCompact(p.balance??0)],['Casado(a)',p.marriedToName??'Nenhum'],['Amigo(a)',p.bestFriendName??'Nenhum']];
   const sheet=await h.loadProfileStatIconSheet();
   for(let i=0;i<stats.length;i++){
     const [x,y]=statPos(i),w=L.statW;
     frame(x,y,w,66,19);
-    glow(ctx,x+37,y+33,30,t.accent,.18);
-    disk(ctx,x+37,y+33,29,t.accent+'35');
-    ctx.strokeStyle=t.accent+'aa';ctx.lineWidth=1;ctx.stroke();
-    if(!h.drawProfileStatIcon(ctx,sheet,i,x+11,y+7,52)){ctx.save();h.STAT_ICON_CONFIGS[i].fallback(ctx,x+11,y+7,52);ctx.restore();}
-    fit(ctx,stats[i][0],x+78,y+23,270,14,panelInk,false);
-    fit(ctx,stats[i][1],x+78,y+48,i===1?136:i>=4?215:266,24,panelInk);
+    if(a.theme==='graphite'){
+      h.roundRect(ctx,x+11,y+8,50,50,13);ctx.fillStyle=t.accent+'25';ctx.fill();ctx.strokeStyle=t.accent+'45';ctx.lineWidth=1;ctx.stroke();
+      drawGraphiteIcon(ctx,i,x+36,y+33,32,pdark?t.light:'#526c83');
+      line(ctx,x+69,y+13,x+69,y+53,t.accent+'65');
+    }else{
+      glow(ctx,x+37,y+33,30,t.accent,.10);disk(ctx,x+37,y+33,29,t.accent+'25');
+      if(!h.drawProfileStatIcon(ctx,sheet,i,x+11,y+7,52)){ctx.save();h.STAT_ICON_CONFIGS[i].fallback(ctx,x+11,y+7,52);ctx.restore();}
+    }
+    write(stats[i][0],x+78,y+23,270,15,panelInk,false);
+    write(stats[i][1],x+78,y+48,i===1?136:i>=4?215:266,25,panelInk);
     if(i===1){
       const progress=Math.min(1,Math.max(0,level.needed?level.current/level.needed:0)),bx=x+220,bw=132;
       ctx.fillStyle=pdark?'#ffffff22':'#00000015';h.roundRect(ctx,bx,y+39,bw,9,4);ctx.fill();
@@ -182,25 +191,27 @@ export async function drawStudioProfile(p,h){
     }
     const days=i===4?p.marriedStreak:i===5?p.friendStreak:0;
     if(days>0){ctx.fillStyle='#f1a256';ctx.beginPath();ctx.moveTo(x+308,y+28);ctx.bezierCurveTo(x+302,y+20,x+313,y+15,x+311,y+9);ctx.bezierCurveTo(x+325,y+20,x+320,y+28,x+314,y+31);ctx.closePath();ctx.fill();fit(ctx,String(days),x+327,y+27,34,14,panelInk);}
-    if(i<4)twinkle(ctx,x+w-17,y+15,3.5,t.accent,.7);
+    if(i<4&&a.theme!=='graphite')twinkle(ctx,x+w-17,y+15,3.5,t.accent,.5);
   }
-  frame(24,514,448,65,19);fit(ctx,'Conquistas',42,536,155,15,panelInk,false);
+  frame(24,514,448,65,19);write('Conquistas',42,536,155,15,panelInk,false);
   const keys=h.computeEarnedBadgeKeys(p);
   const imgs=await Promise.all(keys.map(k=>h.loadEmojiImg(p.guildBadgeEmojis[k]??h.BADGE_DEFS.find(b=>b.key===k)?.defaultEmoji).catch(()=>null)));
-  if(!keys.length)fit(ctx,'Nenhuma conquista ainda',42,560,408,15,panelInk,false);
+  if(!keys.length)write('Nenhuma conquista ainda',42,560,408,15,panelInk,false);
   else {const step=Math.min(37,410/Math.max(1,keys.length));for(let i=0;i<keys.length;i++){
     const x=42+i*step;disk(ctx,x+13,557,12,h.BADGE_DEFS.find(b=>b.key===keys[i])?.color??t.accent);
     if(imgs[i])ctx.drawImage(imgs[i],x+3,547,20,20);else twinkle(ctx,x+13,557,7,t.light);
   }}
-  frame(484,514,292,65,19);fit(ctx,a.signature?'Assinatura':'SUBSTANCY',502,536,250,14,panelInk,false);
-  fit(ctx,a.signature||'Seu perfil, seu estilo.',502,561,254,22,panelInk);
+  frame(484,514,292,65,19);write('Assinatura',502,536,250,15,panelInk,false);
+  write(a.signature||'Seu perfil, seu estilo.',502,561,254,22,panelInk);
   decorations(ctx,a.decor,t);
-  if(background)return {background,foreground:canvas,bannerRect:[bx,by,bw,bh,20]};
+  if(background)return {background,foreground:canvas,bannerRect:[bx,by,bw,bh,20],textMask};
+  if(textMask)canvas.profileTextMask=textMask;
   return p._returnCanvas?canvas:canvas.toBuffer('image/png');
 }
 export function drawProfileEffect(ctx,appearance,phase,base){
   const a=normalizeAppearance(appearance),t=PROFILE_THEMES[a.theme];
   if(['off','banner'].includes(a.effect))return;
+  if(a.effect==='reflection'||a.effect==='butterflies'){drawNewProfileEffect(ctx,a,phase,base,t);return;}
   const old=a.theme==='classic',cx=old?155:L.avatar[0],cy=old?163:L.avatar[1],rr=old?88:L.avatar[2]+12;
   const dream=a.effect==='dream',spark=a.effect==='sparkle'||dream,aurora=a.effect==='aurora';
   ctx.save();

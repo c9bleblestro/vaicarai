@@ -25,7 +25,7 @@ const label=v=>typeof v==='string'?v:v.name;
 export function buildProfileStudioPayload(userId,profile,owned=[]){
   const a=profileAppearance(profile);
   const select=(key,title)=>row(new StringSelectMenuBuilder().setCustomId('profile_studio:'+key+':'+userId).setPlaceholder(title).addOptions(Object.entries(groups[key].options).filter(([v])=>key!=='decor'||!Object.hasOwn(ECONOMY_COSMETICS,v)||owned.includes(v)).map(([value,name])=>({label:label(name),value,default:a[key]===value}))));
-  return {content:'## ✧ Estúdio de perfil\nEscolha seu visual. O novo cartão tem avatar à direita, flores, brilho nas estatísticas e efeitos fluidos e banner com velocidade original. As alterações são salvas apenas no seu perfil.\n**Tema:** '+PROFILE_THEMES[a.theme].name+' • **Animação:** '+PROFILE_EFFECTS[a.effect]+'\n**Decoração:** '+PROFILE_DECORS[a.decor]+'\n-# Suas cores personalizadas de fundo e painel têm prioridade sobre o tema. O clássico mantém o layout anterior, sem decoração ou assinatura nova. O efeito Sonho combina brilhos e pétalas; Aurora anima os contornos.\n-# Banner, argola, moldura VIP, pet, conquistas e cores continuam no menu original. Use Atualizar no perfil público para aplicar as escolhas.',components:[
+  return {content:'## ✧ Estúdio de perfil\nEscolha seu visual. Grafite neutro por padrão; escolha temas, decorações e animações independentes. O banner mantém a velocidade original. As alterações são salvas apenas no seu perfil.\n**Tema:** '+PROFILE_THEMES[a.theme].name+' • **Animação:** '+PROFILE_EFFECTS[a.effect]+'\n**Decoração:** '+PROFILE_DECORS[a.decor]+'\n-# Suas cores personalizadas de fundo e painel têm prioridade sobre o tema. O clássico mantém o layout anterior, sem decoração ou assinatura nova. Reflexo ilumina somente os textos; Borboletas percorrem as margens e o avatar.\n-# Banner, argola, moldura VIP, pet, conquistas e cores continuam no menu original. Use Atualizar no perfil público para aplicar as escolhas.',components:[
     select('theme','Escolha um tema'),select('effect','Escolha uma animação'),select('decor','Escolha uma decoração'),
     row(new ButtonBuilder().setCustomId('profile_studio:signature:'+userId).setLabel('Assinatura').setStyle(ButtonStyle.Secondary),new ButtonBuilder().setCustomId('profile_studio:preview:'+userId).setLabel('Prévia real').setStyle(ButtonStyle.Primary),new ButtonBuilder().setCustomId('profile_studio:reset:'+userId).setLabel('Restaurar visual').setStyle(ButtonStyle.Secondary))
   ],allowedMentions};
@@ -62,7 +62,7 @@ export async function handleProfileStudio(i){
   await i.deferUpdate();
   let p;
   if(action==='reset'){
-    const data={profileTheme:'rose',profileEffect:'off',profileDecor:'floral',profileSignature:null};
+    const data={profileTheme:'graphite',profileEffect:'off',profileDecor:'none',profileSignature:null};
     p=await prisma.userProfile.upsert({where,create:{userId:i.user.id,guildId:i.guildId,...data},update:data});
   }else {
     try{p=await saveProfileAppearance(i.user.id,i.guildId,action,i.values?.[0]);}

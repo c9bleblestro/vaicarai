@@ -647,10 +647,12 @@ export async function ensureCommunityRadioSchema() {
 
 export async function ensureProfileStudioSchema() {
   await prisma.$executeRaw`ALTER TABLE "UserProfile"
-    ADD COLUMN IF NOT EXISTS "profileTheme" TEXT NOT NULL DEFAULT 'rose',
+    ADD COLUMN IF NOT EXISTS "profileTheme" TEXT NOT NULL DEFAULT 'graphite',
     ADD COLUMN IF NOT EXISTS "profileEffect" TEXT NOT NULL DEFAULT 'off',
-    ADD COLUMN IF NOT EXISTS "profileDecor" TEXT NOT NULL DEFAULT 'floral',
+    ADD COLUMN IF NOT EXISTS "profileDecor" TEXT NOT NULL DEFAULT 'none',
     ADD COLUMN IF NOT EXISTS "profileSignature" TEXT`;
+  // Change only future defaults; never overwrite a member’s selected theme or decor.
+  await prisma.$executeRaw`ALTER TABLE "UserProfile" ALTER COLUMN "profileTheme" SET DEFAULT 'graphite', ALTER COLUMN "profileDecor" SET DEFAULT 'none'`;
 }
 
 export async function ensurePetLifeSchema() {

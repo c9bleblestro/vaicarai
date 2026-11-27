@@ -125,11 +125,11 @@ function encodeCanvasAsGif(canvas, delayMs = 100) {
  */
 // A banner-only timeline preserves each original frame's delay. When effects are
 // enabled, use a separate clock, never stretch or rescale the banner's cycle.
-export function buildMotionTimeline(frames,hasEffect,step=40){
+export function buildMotionTimeline(frames,hasEffect,step=40,targetDuration=2400){
   const total=frames.reduce((sum,f)=>sum+f.delayMs,0);
   if(!hasEffect)return frames.map((_,i)=>({index:i,delayMs:frames[i].delayMs,phase:0}));
   // Whole source cycles close the loop without a reset halfway through the banner.
-  const duration=total?total*Math.max(1,Math.min(6,Math.ceil(2400/total))):2400;
+  const duration=total?total*Math.max(1,Math.min(6,Math.ceil(targetDuration/total))):targetDuration;
   const interval=Math.max(step,Math.ceil(duration/180/10)*10);
   let index=0,edge=frames[0]?.delayMs??0,cycle=-1;
   const result=[];
@@ -193,6 +193,7 @@ export async function generateAnimatedProfileCard(params){
   const layers=frames.length?await generateProfileCard({...params,_resolvedBanner:banner,_bannerImage:frames[0].image,_returnLayers:true}):null;
   const still=layers?null:await generateProfileCard({...params,_resolvedBanner:banner,_returnCanvas:true});
   const base=createCanvas(W,H),bc=base.getContext('2d'),out=createCanvas(W,H),ctx=out.getContext('2d');
+  if(layers?.textMask||still?.profileTextMask)base.profileTextMask=layers?.textMask??still.profileTextMask;
   function draw(item){
     bc.clearRect(0,0,W,H);
     if(layers){
@@ -207,7 +208,7 @@ export async function generateAnimatedProfileCard(params){
   }
   const steps=hasEffect?[40,50,70,100]:[40];
   for(const step of steps){
-    const timeline=buildMotionTimeline(frames,hasEffect,step);
+    const timeline=buildMotionTimeline(frames,hasEffect,step,appearance.effect==='reflection'?4800:appearance.effect==='butterflies'?3600:2400);
     let result;
     try{result=await optimizedGif(timeline,draw);}catch(error){
       console.warn('[animCard] FFmpeg indisponível; encoder nativo:',error?.message??error);

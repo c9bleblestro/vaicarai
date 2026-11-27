@@ -55,7 +55,10 @@ export async function renderProfileAttachment(cardParams) {
     } catch (error) {
       // A tentativa animada precisa terminar antes do renderizador estático:
       // o encoder nativo não pode ser cancelado com segurança.
-      console.warn('[perfil] Não foi possível animar; usando GIF estático:', error?.message ?? error);
+      console.warn('[perfil] Não foi possível animar; usando fallback:', error?.message ?? error);
+      // An optional effect must not masquerade as a working animated GIF.
+      // Keep the banner-only historical fallback; for an effect return PNG explicitly.
+      if(effect!=='banner')return {buf:await generateProfileCard(renderParams),filename:'perfil.png',animationUnavailable:true};
       return {
         buf: await generateStaticProfileGifCard(renderParams),
         filename: 'perfil.gif',
@@ -135,7 +138,7 @@ export async function buildProfilePayload({ userId, guildId, guild, target, incl
     guildId,
   };
 
-  const { buf, filename } = await renderProfileAttachment(cardParams);
+  const { buf, filename, animationUnavailable } = await renderProfileAttachment(cardParams);
   const components = [];
   if (includeCustomization) components.push(profileEditMenu());
   components.push(profileRefreshRow(userId));
@@ -143,7 +146,7 @@ export async function buildProfilePayload({ userId, guildId, guild, target, incl
   return {
     files: [new AttachmentBuilder(buf, { name: filename })],
     components,
-    content: null,
+    content: animationUnavailable?'Não consegui renderizar a animação agora. Use Atualizar para tentar novamente.':null,
     allowedMentions: {parse:[],repliedUser:false},
   };
 }

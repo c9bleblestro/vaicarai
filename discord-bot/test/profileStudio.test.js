@@ -7,7 +7,7 @@ import {generateProfileCard} from '../src/utils/profileCard.js';
 import {generateAnimatedProfileCard,buildMotionTimeline} from '../src/utils/animatedProfileCard.js';
 import {renderProfileAttachment} from '../src/commands/general/perfil.js';
 import {ECONOMY_COSMETICS} from '../src/utils/economyProgress.js';
-import {PROFILE_THEMES,PROFILE_EFFECTS,PROFILE_DECORS,normalizeAppearance} from '../src/utils/profileStudioArt.js';
+import {PROFILE_THEMES,PROFILE_EFFECTS,PROFILE_DECORS,normalizeAppearance,drawProfileEffect} from '../src/utils/profileStudioArt.js';
 import {buildProfileStudioPayload,saveProfileAppearance,profileAppearance} from '../src/utils/profileStudio.js';
 
 const params={username:'yas bb do ph',avatarUrl:null,balance:0,bank:0,purchases:0,xp:132,reps:1,marriedToName:'Pessoa A',bestFriendName:'Pessoa B',bio:'Meu perfil',appearance:{theme:'rose',effect:'off',decor:'cat'}};
@@ -94,4 +94,30 @@ test('relógio do GIF respeita os delays originais e efeitos não esticam banner
   assert.equal(motion.reduce((sum,x)=>sum+x.delayMs,0)%240,0);
   assert.ok(motion.every(x=>x.delayMs>=20));
   assert.equal(buildMotionTimeline([],true,40).length,60);
+});
+
+test('grafite é o padrão neutro e não altera escolhas salvas',()=>{
+ assert.deepEqual(normalizeAppearance(),{theme:'graphite',effect:'off',decor:'none',signature:''});
+ assert.equal(normalizeAppearance({theme:'rose',decor:'floral'}).theme,'rose');
+ assert.equal(normalizeAppearance({theme:'rose',decor:'floral'}).decor,'floral');
+});
+test('novos efeitos animam pixels sem substituir foto, banner ou valores',async()=>{
+ const bannerCanvas=createCanvas(120,80),b=bannerCanvas.getContext('2d');b.fillStyle='#11cc77';b.fillRect(0,0,120,80);
+ const banner=await loadImage(bannerCanvas.toBuffer('image/png'));
+ for(const effect of ['reflection','butterflies']){
+  const appearance={theme:'graphite',effect,decor:'none'};
+  const base=await generateProfileCard({...params,appearance,_bannerImage:banner,_returnCanvas:true});
+  const render=phase=>{const c=createCanvas(800,600),ctx=c.getContext('2d');ctx.drawImage(base,0,0);drawProfileEffect(ctx,appearance,phase,base);return c;};
+  const a=render(.31),z=render(.66);
+  assert.ok(!a.toBuffer('image/png').equals(z.toBuffer('image/png')),effect+' needs real movement');
+  for(const c of [a,z]){const ctx=c.getContext('2d');assert.deepEqual([...ctx.getImageData(280,90,1,1).data],[17,204,119,255]);assert.deepEqual([...ctx.getImageData(659,124,1,1).data],[...base.getContext('2d').getImageData(659,124,1,1).data]);}
+  if(effect==='reflection'){
+   assert.ok(base.profileTextMask);
+   const c=a.getContext('2d').getImageData(0,0,800,600).data,original=base.getContext('2d').getImageData(0,0,800,600).data,m=base.profileTextMask.getContext('2d').getImageData(0,0,800,600).data;
+   let changed=0;for(let i=0;i<c.length;i+=4){if(c[i]!==original[i]||c[i+1]!==original[i+1]||c[i+2]!==original[i+2]){changed++;assert.ok(m[i+3]>0,'shine must stay in glyphs');}}assert.ok(changed>20);
+  }
+  const gif=await generateAnimatedProfileCard({...params,appearance,_resolvedBanner:{gradient:['#10151b','#1b222b']}});
+  const frames=framesOf(gif);assert.ok(frames.length>=24);assert.ok(gif.length<=8*1024*1024);
+  assert.ok(frames.some((f,i)=>i>0&&!Buffer.from(f.patch).equals(Buffer.from(frames[0].patch))));
+ }
 });
