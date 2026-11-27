@@ -6,9 +6,11 @@ import {
   ButtonStyle,
   AttachmentBuilder,
   PermissionFlagsBits,
+  ContainerBuilder, MediaGalleryBuilder, MediaGalleryItemBuilder, MessageFlags,
 } from 'discord.js';
 import prisma from '../../database/client.js';
 import { generateBalanceCard } from '../../utils/economyCards.js';
+import { rewardStatus, activeStreak } from '../../utils/economyProgress.js';
 import { getEmoji } from '../../utils/emojiManager.js';
 
 const REFRESH = () => getEmoji('refresh_button');
@@ -57,6 +59,7 @@ export async function buildWalletCard(userId, guildId, guild, target) {
     walletRing:       profile?.walletRing       ?? null,
     walletRingBorder: profile?.walletRingBorder ?? null,
     walletBg:         profile?.walletBg     ?? null,
+    dashboard: {status:rewardStatus(eco),streak:activeStreak(eco),workXp:eco?.workXp??0},
   });
   return new AttachmentBuilder(buf, { name: 'carteira.png' });
 }
@@ -92,6 +95,11 @@ export function walletRefreshRow(userId) {
   );
 }
 
+export function walletPayload(file,userId,includeCustomization=false){
+  const card=new ContainerBuilder().addMediaGalleryComponents(new MediaGalleryBuilder().addItems(new MediaGalleryItemBuilder().setURL('attachment://carteira.png')));
+  return {files:[file],components:[card,...(includeCustomization?editMenu():[]),walletRefreshRow(userId)],flags:MessageFlags.IsComponentsV2};
+}
+
 // ─── Export ───────────────────────────────────────────────────────────────────
 
 export default {
@@ -110,10 +118,7 @@ export default {
       interaction.guild,
       interaction.user,
     );
-    return interaction.editReply({
-      files: [file],
-      components: [...editMenu(), walletRefreshRow(interaction.user.id)],
-    });
+    return interaction.editReply(walletPayload(file,interaction.user.id,true));
   },
 
   async executePrefix(message, args) {
@@ -154,6 +159,6 @@ export default {
     // savage pf [@user] → view carteira (com botão de atualização)
     const target = message.mentions.users.first() ?? message.author;
     const file   = await buildWalletCard(target.id, message.guildId, message.guild, target);
-    return message.reply({ files: [file], components: [walletRefreshRow(target.id)] });
+    return message.reply(walletPayload(file,target.id,target.id===message.author.id));
   },
 };

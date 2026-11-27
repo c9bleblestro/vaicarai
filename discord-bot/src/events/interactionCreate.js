@@ -58,7 +58,7 @@ import { handleShopInteraction } from '../utils/shopHandlers.js';
 import { handleProfileStudio } from '../utils/profileStudio.js';
 import { buildProfilePayload } from '../commands/general/perfil.js';
 import { handleStreakCollectionPage } from '../commands/interacoes/foguinho.js';
-import { buildWalletCard, walletRefreshRow } from '../commands/economia/pf.js';
+import { buildWalletCard, walletRefreshRow, walletPayload } from '../commands/economia/pf.js';
 import { handleImageSearchInteraction } from '../commands/general/imagens.js';
 import { handlePetButton } from '../commands/general/pet.js';
 import { handleModerationButton } from '../commands/admin/moderacao.js';
@@ -770,7 +770,7 @@ export default {
           return handleTriggerButton(interaction);
         }
 
-        if (interaction.customId.startsWith('work_select:')) {
+        if ((interaction.customId.startsWith('work_select:') || interaction.customId.startsWith('work_answer:'))) {
           return handleWorkInteraction(interaction);
         }
         if (
@@ -1411,17 +1411,7 @@ export default {
             const file = await buildWalletCard(userId, interaction.guildId, interaction.guild, target);
             const includeCustomization = interaction.message.components
               ?.some(row => row.components?.some(component => component.customId === 'wallet_menu'));
-            return interaction.editReply({
-              files: [file],
-              components: includeCustomization
-                ? [
-                    ...interaction.message.components
-                      .filter(row => row.components?.some(component => component.customId === 'wallet_menu'))
-                      .map(row => ActionRowBuilder.from(row)),
-                    walletRefreshRow(userId),
-                  ]
-                : [walletRefreshRow(userId)],
-            });
+            return interaction.editReply({attachments:[],...walletPayload(file,userId,includeCustomization)});
           } catch (error) {
             console.error('[CARD REFRESH]', error?.stack ?? error);
             return interaction.editReply({
