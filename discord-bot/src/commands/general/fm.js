@@ -1,3 +1,4 @@
+import { randomUUID } from 'node:crypto';
 import {
   SlashCommandBuilder, ChannelType, PermissionFlagsBits, MessageFlags,
   ActionRowBuilder, ButtonBuilder, ButtonStyle, StringSelectMenuBuilder,
@@ -47,6 +48,34 @@ async function makeRequest(s,user,member,query,recipient,message,anonymous){
   const item=await s.request({userId:user.id,name:member?.displayName??user.globalName??user.username,query,recipientName:recipient?.displayName??null,message,anonymous});
   return '✅ **'+safe(item.track.title)+'** adicionada à fila!'+(item.track.sourceFallback?'\nO link original não liberou o áudio. Encontrei uma versão correspondente no SoundCloud.':'')+(recipient?' A dedicatória aparecerá quando tocar.':'')+'\n'+panelNotice(s);
 }
+const pendingChoices=new Map();
+export function buildTrackChoicePayload(id,tracks){
+  return {...textResult('🎵 Encontrei estas opções. Escolha a faixa que você queria.'),components:[new ActionRowBuilder().addComponents(
+    new StringSelectMenuBuilder().setCustomId('fm:choose:'+id).setPlaceholder('Escolher música').addOptions(tracks.map((t,index)=>new StringSelectMenuOptionBuilder()
+      .setLabel(clip(t.title||'Música',100)).setDescription(clip((t.uploader||'Artista desconhecido')+' • '+(t.platform==='youtube'?'YouTube':'SoundCloud')+' • '+(t.duration||''),100)).setValue(String(index))))
+  )]};
+}
+async function withTrackChoice(guildId,userId,query,action){
+  try{return textResult(await action(query));}
+  catch(error){
+    if(!error?.suggestions?.length)throw error;
+    const id=randomUUID(),tracks=error.suggestions.slice(0,5);
+    for(const [key,p] of pendingChoices)if(p.expires<Date.now()||p.guildId===guildId&&p.userId===userId)pendingChoices.delete(key);
+    while(pendingChoices.size>=200)pendingChoices.delete(pendingChoices.keys().next().value);
+    pendingChoices.set(id,{guildId,userId,tracks,action,expires:Date.now()+120000});
+    return buildTrackChoicePayload(id,tracks);
+  }
+}
+async function chooseTrack(i,id){
+  const p=pendingChoices.get(id);
+  if(!p||p.expires<Date.now()||p.guildId!==i.guildId||p.userId!==i.user.id)return i.reply({...textResult('Essa seleção expirou ou pertence a outro membro. Faça um novo pedido.'),flags:PRIVATE});
+  const t=p.tracks[Number(i.values?.[0])];
+  if(!t)return i.reply({...textResult('Opção inválida.'),flags:PRIVATE});
+  pendingChoices.delete(id);
+  await i.deferUpdate();
+  try{return i.editReply({...textResult(await p.action(t.url)),components:[]});}
+  catch(e){return i.editReply({...textResult('❌ '+friendly(e)),components:[]});}
+}
 async function memberById(guild,id){if(!/^\d{17,20}$/.test(id??''))return null;return guild.members.fetch(id).catch(()=>null);}
 async function djAction(s,member,action,station){
   if(!canDj(member,s.config.djRoleId))throw new Error('Apenas a administração ou o cargo DJ pode controlar a rádio.');
@@ -57,9 +86,10 @@ async function djAction(s,member,action,station){
 }
 export async function handleFmInteraction(i){
   if(!i.guildId)return i.reply({...textResult(needsRadio),flags:PRIVATE});
+  const [,action,a,b]=i.customId.split(':');
+  if(i.isStringSelectMenu()&&action==='choose')return chooseTrack(i,a);
   const s=fmSessions.get(i.guildId);
   if(!s||s.stopped)return i.reply({...textResult(needsRadio),flags:PRIVATE});
-  const [,action,a,b]=i.customId.split(':');
   if(i.isButton()){
     if(i.message?.id!==s.config.panelMessageId)return i.reply({...textResult('Este painel não está mais ativo. Use /fm painel.'),flags:PRIVATE});
     if(action==='request')return i.showModal(buildRequestModal());
@@ -100,7 +130,7 @@ export async function handleFmInteraction(i){
       const recipient=a==='request'?null:await memberById(i.guild,a);
       if(a!=='request'&&!recipient)throw new Error('Não encontrei esse membro no servidor.');
       const msg=recipient?i.fields.getTextInputValue('message'):'';
-      return i.editReply(textResult(await makeRequest(s,i.user,i.member,i.fields.getTextInputValue('query'),recipient,msg,b==='1')));
+      return i.editReply(await withTrackChoice(i.guildId,i.user.id,i.fields.getTextInputValue('query'),q=>makeRequest(s,i.user,i.member,q,recipient,msg,b==='1')));
     }catch(e){return i.editReply(textResult('❌ '+friendly(e)));}
   }
 }
@@ -161,8 +191,11 @@ export default {
         if(role?.id===i.guildId)throw new Error('Escolha um cargo de DJ diferente de @everyone.');
         const explicitVoiceId=i.options.getChannel('voz')?.id;
         const voiceChannelId=resolveStartVoice(explicitVoiceId,i.guild.voiceStates.cache.get(i.user.id)?.channelId??i.member?.voice?.channelId);
-        const s=await startFm(i.guild,{voiceChannelId,implicitVoiceUserId:explicitVoiceId?null:i.user.id,textChannelId:i.options.getChannel('painel')?.id??null,station:i.options.getString('estacao')||'auto',djRoleId:role?.id??null,initialRequest:initialRequest(i.user,i.member,i.options.getString('musica'))});
-        return i.editReply(textResult(startNotice(s)));
+        const options={voiceChannelId,implicitVoiceUserId:explicitVoiceId?null:i.user.id,textChannelId:i.options.getChannel('painel')?.id??null,station:i.options.getString('estacao')||'auto',djRoleId:role?.id??null};
+        return i.editReply(await withTrackChoice(i.guildId,i.user.id,i.options.getString('musica'),async q=>{
+          if(!admin(await i.guild.members.fetch(i.user.id)))throw new Error('Apenas a administração pode iniciar a rádio.');
+          return startNotice(await startFm(i.guild,{...options,initialRequest:initialRequest(i.user,i.member,q)}));
+        }));
       }
       if(sub==='parar'){
         if(!admin(i.member))throw new Error('Apenas a administração pode parar a rádio.');
@@ -175,7 +208,7 @@ export default {
       if(sub==='pedir'||sub==='dedicar'){
         const recipient=sub==='dedicar'?await memberById(i.guild,i.options.getUser('membro',true).id):null;
         if(sub==='dedicar'&&!recipient)throw new Error('Membro não encontrado.');
-        return i.editReply(textResult(await makeRequest(s,i.user,i.member,i.options.getString('musica',true),recipient,i.options.getString('mensagem')||'',Boolean(i.options.getBoolean('anonimo')))));
+        return i.editReply(await withTrackChoice(i.guildId,i.user.id,i.options.getString('musica',true),q=>makeRequest(s,i.user,i.member,q,recipient,i.options.getString('mensagem')||'',Boolean(i.options.getBoolean('anonimo')))));
       }
       return i.editReply(textResult(await djAction(s,i.member,{pular:'skip',pausar:'toggle',estacao:'station'}[sub],i.options.getString('modo'))));
     }catch(e){return i.editReply(textResult('❌ '+friendly(e)));}
@@ -189,8 +222,10 @@ export default {
       if(sub==='iniciar'){
         if(!admin(message.member))throw new Error('Apenas a administração pode iniciar a rádio.');
         const options=await parseFmStartPrefix(message.guild,args,message.member?.voice?.channelId);
-        const s=await startFm(message.guild,{...options,implicitVoiceUserId:options.usesCurrentVoice?message.author.id:null,initialRequest:initialRequest(message.author,message.member,options.query)});
-        return respond(startNotice(s));
+        return message.reply(await withTrackChoice(message.guildId,message.author.id,options.query,async q=>{
+          if(!admin(await message.guild.members.fetch(message.author.id)))throw new Error('Apenas a administração pode iniciar a rádio.');
+          return startNotice(await startFm(message.guild,{...options,implicitVoiceUserId:options.usesCurrentVoice?message.author.id:null,initialRequest:initialRequest(message.author,message.member,q)}));
+        }));
       }
       if(sub==='parar'){
         if(!admin(message.member))throw new Error('Apenas a administração pode parar a rádio.');
@@ -201,14 +236,14 @@ export default {
       if(sub==='painel'){if(!message.channel.permissionsFor(message.member)?.has(PermissionFlagsBits.SendMessages))throw new Error('Você precisa ter permissão para enviar mensagens neste canal.');await s.publishPanel(message.channel);return respond('✅ '+panelNotice(s));}
       if(sub==='entrar')return respond(panelNotice(s));
       if(sub==='fila')return message.reply(buildQueuePayload(s,message.member));
-      if(sub==='pedir')return respond(await makeRequest(s,message.author,message.member,args.join(' '),null,'',false));
+      if(sub==='pedir')return message.reply(await withTrackChoice(message.guildId,message.author.id,args.join(' '),q=>makeRequest(s,message.author,message.member,q,null,'',false)));
       if(sub==='anonima')return respond('Use o botão Anônima no painel ou /fm dedicar com anonimo: sim. Evite publicar um pedido anônimo no chat.');
       if(sub==='dedicar'){
         const parts=args.join(' ').split('|').map(x=>x.trim());
         const id=parts[0]?.match(/^<@!?(\d{17,20})>$/)?.[1]??parts[0];
         const recipient=await memberById(message.guild,id);
         if(!recipient||!parts[1])return respond('Use `s fm dedicar @membro | música | recado` ou `/fm dedicar`.');
-        return respond(await makeRequest(s,message.author,message.member,parts[1],recipient,parts.slice(2).join(' | '),false));
+        return message.reply(await withTrackChoice(message.guildId,message.author.id,parts[1],q=>makeRequest(s,message.author,message.member,q,recipient,parts.slice(2).join(' | '),false)));
       }
       if(['pular','pausar','estacao'].includes(sub))return respond(await djAction(s,message.member,{pular:'skip',pausar:'toggle',estacao:'station'}[sub],args[0]));
       return respond(usage);

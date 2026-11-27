@@ -1,6 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { resolveFmTrack, matchCatalog, rankCandidates, safeArtworkUrl } from '../src/utils/fmTracks.js';
+import { resolveFmTrack, matchCatalog, rankCandidates, safeArtworkUrl, candidateScore } from '../src/utils/fmTracks.js';
 import { validQuery, validTrackUrl, trackPlatform, extractorFailure, fmSourceError } from '../src/utils/fmAudio.js';
 const sc='https://soundcloud.com/the-weeknd/die-for-you';
 const yt='https://www.youtube.com/watch?v=abcdefghijk';
@@ -62,4 +62,40 @@ test('busca não desiste quando o primeiro candidato não está disponível',asy
   const second={...song,url:'https://soundcloud.com/artist/second'};
   const result=await resolveFmTrack('Die For You The Weeknd',{search:async()=>[song,second],inspect:async url=>{if(url===sc)throw fmSourceError('SOURCE_UNAVAILABLE');return second;},catalog:async()=>[album]});
   assert.equal(result.url,second.url);
+});
+
+test('pesquisa independente encontra mesmo quando play-dl falha e não para no primeiro resultado',async()=>{
+  const found={...song,url:'https://soundcloud.com/artista/faixa'};
+  const calls=[];
+  const result=await resolveFmTrack('Die For You The Weeknd',{
+    search:async()=>{throw new Error('play-dl indisponível');},
+    discover:async(q,p,n)=>{calls.push([p,n]);return p==='soundcloud'?[found]:[];},
+    inspect:async()=>found,catalog:async()=>[album]
+  });
+  assert.equal(result.url,found.url);
+  assert.deepEqual(calls,[['soundcloud',15],['youtube',15]]);
+});
+test('nome parcial e erro de digitação recebem opções verificadas',async()=>{
+  assert.ok(candidateScore('die for yuo the weeknd',song)>0);
+  assert.ok(candidateScore('die for you',song)>0);
+  assert.ok(candidateScore('die for you', {...song,title:'Die For You Remix'})<0);
+  await assert.rejects(resolveFmTrack('Die For Yu The Weeknd',{search:async()=>[song],inspect:async()=>song,discover:async()=>[],catalog:async()=>[]}),e=>e.code==='FM_CHOOSE_TRACK'&&e.suggestions[0].url===sc);
+});
+test('título de vídeo com artista não exige que o nome do canal seja o artista',async()=>{
+  const result=await resolveFmTrack(yt,{inspect:async url=>{if(url===yt)throw fmSourceError('SOURCE_RESTRICTED');return song;},
+    youtube:async()=>({title:'The Weeknd - Die For You (Official Music Video)',artist:'Canal de Música'}),
+    search:async q=>{assert.equal(q,'The Weeknd - Die For You');return [song];},catalog:async()=>[album]});
+  assert.equal(result.sourceFallback,true);assert.equal(result.url,sc);
+});
+test('busca ambígua não escolhe cantor sem autorização',async()=>{
+  const alternate={...song,uploader:'Outra cantora',url:'https://soundcloud.com/outra/die-for-you'};
+  await assert.rejects(resolveFmTrack('Die For You',{search:async()=>[song,alternate],inspect:async url=>url===sc?song:alternate,discover:async()=>[],catalog:async()=>[]}),e=>e.code==='FM_CHOOSE_TRACK'&&e.suggestions.length===2);
+});
+test('menu de seleção serializa opções reais e mantém a ação separada',async()=>{
+  const {buildTrackChoicePayload}=await import('../src/commands/general/fm.js');
+  const p=buildTrackChoicePayload('id',[{...song,platform:'soundcloud'}]);
+  const menu=p.components[0].toJSON().components[0];
+  assert.equal(menu.custom_id,'fm:choose:id');
+  assert.equal(menu.options[0].label,'Die For You');
+  assert.match(menu.options[0].description,/The Weeknd/);
 });
