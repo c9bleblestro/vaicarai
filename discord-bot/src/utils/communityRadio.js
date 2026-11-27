@@ -25,7 +25,7 @@ export function scheduledStation(date=new Date()){
 }
 export function stationKey(mode,date=new Date()){return mode==='auto'||!PLAYLISTS[mode]?scheduledStation(date):mode;}
 export function rankQueue(queue){
-  return [...queue].sort((a,b)=>(b.votes?.length??0)-(a.votes?.length??0)||a.createdAt-b.createdAt||a.id.localeCompare(b.id));
+  return [...queue].sort((a,b)=>Number(Boolean(b.opening))-Number(Boolean(a.opening))||(b.votes?.length??0)-(a.votes?.length??0)||a.createdAt-b.createdAt||a.id.localeCompare(b.id));
 }
 export function toggleQueueVote(queue,id,userId){
   if(!queue.some(x=>x.id===id))throw new Error('Esse pedido não está mais na fila.');
@@ -44,6 +44,25 @@ const durationSeconds=s=>{
 const time=s=>Math.floor(s/60)+':'+String(Math.floor(s%60)).padStart(2,'0');
 const sleep=ms=>new Promise(r=>setTimeout(r,ms));
 function timeout(promise,ms){let timer;return Promise.race([promise,new Promise((_,reject)=>{timer=setTimeout(()=>reject(new Error('A busca demorou demais. Tente novamente.')),ms);})]).finally(()=>clearTimeout(timer));}
+export async function createFmRequestItem({userId,name,query,recipientName=null,message='',anonymous=false,opening=false},resolve=resolveFmTrack){
+  if(!validQuery(query))throw new Error('Use um nome ou link HTTPS do SoundCloud, YouTube ou Spotify.');
+  let info;
+  try{info=await timeout(resolve(query.trim()),85000);}catch(error){throw new Error(error?.message||'Não encontrei uma faixa disponível. Tente outro nome ou link.');}
+  if(!validTrackUrl(info.url))throw new Error('A busca não retornou uma fonte de áudio compatível.');
+  if(durationSeconds(info.duration)>900)throw new Error('Escolha uma faixa de até 15 minutos.');
+  return {id:randomUUID(),requesterId:userId,requesterName:clip(name,80),recipientName:recipientName?clip(recipientName,80):null,
+    opening:Boolean(opening),anonymous:Boolean(anonymous),message:clip(message,240),createdAt:Date.now(),votes:[],
+    track:{title:clip(info.title||'Música',180),uploader:clip(info.uploader||'Artista não informado',120),duration:clip(info.duration,20),album:info.album?clip(info.album,150):null,artwork:safeArtworkUrl(info.artwork),thumbnail:safeArtworkUrl(info.thumbnail),platform:info.platform,sourceFallback:Boolean(info.sourceFallback),requestedPlatform:info.requestedPlatform??null,url:info.url}};
+}
+export function resolveStartVoice(explicitId,memberVoiceId){
+  const id=explicitId||memberVoiceId;
+  if(!id)throw new Error('Entre em uma call ou escolha um canal de voz para iniciar a FM.');
+  return id;
+}
+export function validatePanelChannel(channel,guild){
+  if(channel?.type!==ChannelType.GuildText||channel.guildId!==guild.id||!channel.permissionsFor(guild.members.me)?.has([PermissionFlagsBits.ViewChannel,PermissionFlagsBits.SendMessages,PermissionFlagsBits.ReadMessageHistory,PermissionFlagsBits.EmbedLinks]))throw new Error('Escolha um canal de texto onde o bot possa enviar mensagens, ler histórico e inserir links.');
+  return channel;
+}
 export function canDj(member,roleId){
   return Boolean(member?.permissions?.has(PermissionFlagsBits.ManageGuild)||roleId&&(member?.roles?.cache?.has(roleId)||Array.isArray(member?.roles)&&member.roles.includes(roleId)));
 }
@@ -96,7 +115,7 @@ export class CommunityRadioSession {
   constructor({guild,voiceChannel,textChannel,connection,config,panel,db=prisma}){
     Object.assign(this,{guild,voiceChannel,textChannel,connection,config,panel,db});
     this.queue=Array.isArray(config.queue)?config.queue:[];this.player=createAudioPlayer();this.current=null;this.phase='station';
-    this.stopped=false;this.paused=false;this.lastError='';this.skipCurrent=false;this.liveKey=null;this.pending=Promise.resolve();this.requesting=new Set();this.requestTimes=new Map();
+    this.stopped=false;this.paused=false;this.lastError='';this.skipCurrent=false;this.liveKey=null;this.pending=Promise.resolve();this.panelPending=Promise.resolve();this.requesting=new Set();this.requestTimes=new Map();
     this.player.on('error',error=>console.warn('[FM] Player:',error?.code??error?.message??error));
     connection.subscribe(this.player);
   }
@@ -111,11 +130,34 @@ export class CommunityRadioSession {
       console.warn('[FM] Sessão:',error?.message??error);this.stop().catch(()=>{});
     });
   }
+  panelOperation(fn){
+    const op=this.panelPending.then(fn);this.panelPending=op.catch(()=>{});return op;
+  }
+  async publishPanel(channel){
+    validatePanelChannel(channel,this.guild);
+    return this.panelOperation(async()=>{
+      if(this.stopped)throw new Error('A rádio foi encerrada.');
+      const previous=this.panel;
+      if(previous&&this.config.textChannelId===channel.id){
+        try{await previous.edit(buildFmPanel(this));return previous;}
+        catch(e){if(Number(e?.code)!==10008)throw e;}
+      }
+      const message=await channel.send(buildFmPanel(this));
+      try{
+        await this.db.communityRadio.update({where:{guildId:this.guild.id},data:{textChannelId:channel.id,panelMessageId:message.id}});
+      }catch(error){await message.delete().catch(()=>{});throw error;}
+      this.panel=message;this.textChannel=channel;this.config.textChannelId=channel.id;this.config.panelMessageId=message.id;
+      if(previous&&previous.id!==message.id)await previous.edit({components:[new ContainerBuilder().addTextDisplayComponents(text('Painel da Substancy FM movido para <#'+channel.id+'>.'))],flags:MessageFlags.IsComponentsV2,allowedMentions:{parse:[]}}).catch(()=>{});
+      return message;
+    });
+  }
   async refresh(){
     if(!this.panel||this.refreshing)return;
     this.refreshing=true;
-    try{await this.panel.edit(buildFmPanel(this));}
-    catch(error){
+    try{await this.panelOperation(async()=>{
+      if(!this.panel)return;
+      try{await this.panel.edit(buildFmPanel(this));}
+      catch(error){
       if(Number(error?.code)===10008&&!this.stopped){
         try{
           this.panel=await this.textChannel.send(buildFmPanel(this));
@@ -123,7 +165,8 @@ export class CommunityRadioSession {
           await this.db.communityRadio.update({where:{guildId:this.guild.id},data:{panelMessageId:this.panel.id}});
         }catch(e){console.warn('[FM] Novo painel:',e?.code??e?.message??e);}
       }else console.warn('[FM] Painel:',error?.code??error?.message??error);
-    }
+      }
+    });}
     finally{this.refreshing=false;}
   }
   mutateQueue(fn){
@@ -144,13 +187,7 @@ export class CommunityRadioSession {
     this.requesting.add(userId);this.requestTimes.set(userId,Date.now());
     if(this.requestTimes.size>1000)for(const [id,t] of this.requestTimes)if(Date.now()-t>60000)this.requestTimes.delete(id);
     try{
-      let info;
-      try{info=await timeout(resolveFmTrack(query.trim()),85000);}catch(error){throw new Error(error?.message||'Não encontrei uma faixa disponível. Tente outro nome ou link.');}
-      if(!validTrackUrl(info.url))throw new Error('A busca não retornou uma fonte de áudio compatível.');
-      if(durationSeconds(info.duration)>900)throw new Error('Escolha uma faixa de até 15 minutos.');
-      const item={id:randomUUID(),requesterId:userId,requesterName:clip(name,80),recipientName:recipientName?clip(recipientName,80):null,
-        anonymous:Boolean(anonymous),message:clip(message,240),createdAt:Date.now(),votes:[],
-        track:{title:clip(info.title||'Música',180),uploader:clip(info.uploader||'Artista não informado',120),duration:clip(info.duration,20),album:info.album?clip(info.album,150):null,artwork:safeArtworkUrl(info.artwork),thumbnail:safeArtworkUrl(info.thumbnail),platform:info.platform,sourceFallback:Boolean(info.sourceFallback),requestedPlatform:info.requestedPlatform??null,url:info.url}};
+      const item=await createFmRequestItem({userId,name,query,recipientName,message,anonymous});
       await this.mutateQueue(q=>{checkQueueLimit(q,userId);return {queue:[...q,item],value:item};});
       if(this.phase==='station')this.interrupt('request');
       this.refresh();return item;
@@ -214,8 +251,8 @@ export class CommunityRadioSession {
       this.skipCurrent=false;this.current=await this.next();
       if(this.stopped)break;
       if(this.current){
-        this.phase='announcement';this.lastError='';this.refresh();
-        try{
+        this.phase=this.current.opening?'track':'announcement';this.lastError='';this.refresh();
+        if(!this.current.opening)try{
           const speech=await openAnnouncement(speechText(this.current));
           if(!this.stopped&&!this.skipCurrent)await this.playManaged(speech,45000);else speech.close();
         }catch(error){console.warn('[FM] Locução:',error?.code??'erro');}
@@ -223,7 +260,8 @@ export class CommunityRadioSession {
           this.phase='track';this.refresh();
           let outcome='failed';try{outcome=await this.playManaged(openTrack(this.current.track.url),16*60000);}catch(error){console.warn('[FM] Faixa:',error?.message??error);}
           if(outcome==='failed'&&!this.stopped){
-            await this.textChannel.send({content:'⚠️ Não foi possível reproduzir **'+md(this.current.track.title,120)+'**. A rádio seguirá para o próximo pedido.',allowedMentions:{parse:[]}}).catch(()=>{});
+            this.lastError='Não foi possível reproduzir a faixa';
+            await this.textChannel?.send({content:'⚠️ Não foi possível reproduzir **'+md(this.current.track.title,120)+'**. A rádio seguirá para o próximo pedido.',allowedMentions:{parse:[]}}).catch(()=>{});
           }
         }
         this.current=null;
@@ -243,6 +281,7 @@ export class CommunityRadioSession {
     try{this.player.stop(true);}catch{}
     try{this.connection.destroy();}catch{}
     await this.pending;
+    await this.panelPending;
     // Aguarda uma edição anterior do painel para que o estado offline prevaleça.
     for(let i=0;i<20&&this.refreshing;i++)await sleep(100);
     await this.refresh();
@@ -250,38 +289,48 @@ export class CommunityRadioSession {
     releaseFmVoice(this.guild.id);
   }
 }
-export async function startFm(guild,settings,db=prisma){
+export async function startFm(guild,settings,db=prisma,deps={}){
   if(!reserveFmVoice(guild.id))throw new Error('A Substancy FM já está ativa ou iniciando.');
   let connection, session;
   try{
     if(radioSessions.has(guild.id)||musicSessions.has(guild.id)||getVoiceConnection(guild.id))throw new Error('Encerre a sessão de áudio atual antes de iniciar a FM.');
     if(settings.enabled===true){const current=await db.communityRadio.findUnique({where:{guildId:guild.id}});if(!current?.enabled)throw new Error('A rádio está desativada.');settings=current;}
     const voice=await guild.channels.fetch(settings.voiceChannelId);
-    const channel=await guild.channels.fetch(settings.textChannelId);
+    const channel=settings.textChannelId?validatePanelChannel(await guild.channels.fetch(settings.textChannelId),guild):null;
     const me=guild.members.me;
     if(voice?.type!==ChannelType.GuildVoice||!voice.permissionsFor(me)?.has([PermissionFlagsBits.ViewChannel,PermissionFlagsBits.Connect,PermissionFlagsBits.Speak]))throw new Error('Escolha uma call comum e dê ao bot permissões de conectar e falar.');
-    if(channel?.type!==ChannelType.GuildText||!channel.permissionsFor(me)?.has([PermissionFlagsBits.ViewChannel,PermissionFlagsBits.SendMessages,PermissionFlagsBits.ReadMessageHistory,PermissionFlagsBits.EmbedLinks]))throw new Error('O canal do painel precisa permitir enviar mensagens, ler histórico e inserir links.');
-    if(getVoiceConnection(guild.id))throw new Error('Outra sessão de voz foi iniciada.');
-    connection=joinVoiceChannel({guildId:guild.id,channelId:voice.id,adapterCreator:guild.voiceAdapterCreator,selfDeaf:true,selfMute:false});
-    connection.on('error',err=>console.warn('[FM] Voz:',err?.message??err));
-    await entersState(connection,VoiceConnectionStatus.Ready,25000);
     const existing=await db.communityRadio.findUnique({where:{guildId:guild.id}});
-    const config={guildId:guild.id,voiceChannelId:voice.id,textChannelId:channel.id,station:settings.station||'auto',djRoleId:settings.djRoleId??null,enabled:true,queue:existing?.queue??[]};
+    let queue=Array.isArray(existing?.queue)?existing.queue:[];
+    let openingItem=null;
+    if(settings.initialRequest){
+      checkQueueLimit(queue,settings.initialRequest.userId);
+      openingItem=await createFmRequestItem({...settings.initialRequest,opening:true},deps.resolveTrack??resolveFmTrack);
+      // A nova abertura é prioritária, sem apagar pedidos anteriores.
+      queue=[openingItem,...queue.map(x=>({...x,opening:false}))];
+    }
+    if(settings.implicitVoiceUserId&&guild.voiceStates.cache.get(settings.implicitVoiceUserId)?.channelId!==voice.id)throw new Error('Você saiu ou mudou de call antes de iniciar a FM. Tente novamente.');
+    if(getVoiceConnection(guild.id))throw new Error('Outra sessão de voz foi iniciada.');
+    connection=(deps.joinVoice??joinVoiceChannel)({guildId:guild.id,channelId:voice.id,adapterCreator:guild.voiceAdapterCreator,selfDeaf:true,selfMute:false});
+    connection.on('error',err=>console.warn('[FM] Voz:',err?.message??err));
+    await (deps.waitReady??entersState)(connection,VoiceConnectionStatus.Ready,25000);
+    const config={guildId:guild.id,voiceChannelId:voice.id,textChannelId:channel?.id??null,station:settings.station||'auto',djRoleId:settings.djRoleId??null,enabled:true,queue};
     session=new CommunityRadioSession({guild,voiceChannel:voice,textChannel:channel,connection,config,panel:null,db});
-    if(existing?.textChannelId===channel.id&&existing.panelMessageId){
+    if(channel&&existing?.textChannelId===channel.id&&existing.panelMessageId){
       const old=await channel.messages.fetch(existing.panelMessageId).catch(()=>null);
       if(old?.author?.id===guild.client.user.id)session.panel=old;
     }
-    if(!session.panel)session.panel=await channel.send(buildFmPanel(session));
-    await db.communityRadio.upsert({where:{guildId:guild.id},create:{...config,panelMessageId:session.panel.id},update:{...config,panelMessageId:session.panel.id}});
-    session.config.panelMessageId=session.panel.id;
+    if(channel&&!session.panel)session.panel=await channel.send(buildFmPanel(session));
+    const panelMessageId=session.panel?.id??null;
+    await db.communityRadio.upsert({where:{guildId:guild.id},create:{...config,panelMessageId},update:{...config,panelMessageId}});
+    session.config.panelMessageId=panelMessageId;
+    session.openingItem=openingItem;
     fmSessions.set(guild.id,session);
     connection.on(VoiceConnectionStatus.Disconnected,async()=>{
       if(session.stopped)return;
       try{await Promise.race([entersState(connection,VoiceConnectionStatus.Signalling,5000),entersState(connection,VoiceConnectionStatus.Connecting,5000)]);}
       catch{await session.stop();}
     });
-    session.start();return session;
+    (deps.startPlayback??(s=>s.start()))(session);return session;
   }catch(error){
     if(session)await session.stop();else{try{connection?.destroy();}catch{}releaseFmVoice(guild.id);}
     throw error;

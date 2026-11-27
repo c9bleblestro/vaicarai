@@ -634,7 +634,7 @@ export async function ensureCommunityRadioSchema() {
     CREATE TABLE IF NOT EXISTS "CommunityRadio" (
       "guildId" TEXT PRIMARY KEY,
       "voiceChannelId" TEXT NOT NULL,
-      "textChannelId" TEXT NOT NULL,
+      "textChannelId" TEXT,
       "panelMessageId" TEXT,
       "station" TEXT NOT NULL DEFAULT 'auto',
       "djRoleId" TEXT,
@@ -642,6 +642,7 @@ export async function ensureCommunityRadioSchema() {
       "queue" JSONB NOT NULL DEFAULT '[]'::jsonb
     )
   `;
+  await prisma.$executeRaw`ALTER TABLE "CommunityRadio" ALTER COLUMN "textChannelId" DROP NOT NULL`;
 }
 
 export default prisma;
