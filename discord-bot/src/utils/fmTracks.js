@@ -1,10 +1,10 @@
-import { trackPlatform, validQuery, validTrackUrl, readTrackMetadata, fmSourceError } from './fmAudio.js';
+import { trackPlatform, validQuery, validTrackUrl, readTrackMetadata, fmSourceError, discoverFmTracks } from './fmAudio.js';
 import { searchSoundCloudCandidates } from './musicManager.js';
 
 const clean=v=>String(v??'').trim();
 const normalize=v=>clean(v).normalize('NFKD').replace(/\p{M}/gu,'').toLowerCase().replace(/[^\p{L}\p{N}]+/gu,' ').trim();
 const tokens=v=>normalize(v).split(/\s+/).filter(Boolean);
-const meaningful=v=>tokens(v).filter(t=>!['official','audio','video','lyrics','lyric','hd','hq','topic','music','visualizer','oficial'].includes(t));
+const meaningful=v=>tokens(v).filter(t=>!['official','audio','video','lyrics','lyric','hd','hq','topic','music','visualizer','oficial','clipe','feat','ft','letra'].includes(t));
 const contains=(value,part)=>(' '+normalize(value)+' ').includes(' '+normalize(part)+' ');
 const versions=/\b(remix|cover|karaoke|sped up|slowed|nightcore|instrumental|live|acoustic|ao vivo|acustico|mashup|reverb)\b/;
 const versionMatches=(target,candidate)=>{
@@ -43,14 +43,39 @@ export function matchCatalog(results,track){
     return titleOk&&artistOk;
   })??null;
 }
-function score(query,track){
-  const target=meaningful(query),candidate=meaningful(track.title+' '+track.uploader);
-  if(!target.length||!versionMatches(query,track.title))return -1;
-  if(!target.every(t=>candidate.includes(t)))return -1;
-  return 100-(candidate.length-target.length)+ (normalize(query)===normalize(track.title)?20:0);
+function editDistance(a,b){
+  if(Math.abs(a.length-b.length)>2)return 3;
+  let row=Array.from({length:b.length+1},(_,i)=>i);
+  for(let i=1;i<=a.length;i++){
+    const next=[i];
+    for(let j=1;j<=b.length;j++)next[j]=Math.min(row[j]+1,next[j-1]+1,row[j-1]+Number(a[i-1]!==b[j-1]));
+    row=next;
+  }return row[b.length];
+}
+function similarity(a,b){
+  if(a===b)return 1;
+  if(a.length>=3&&b.startsWith(a))return .78;
+  if(a.length>=4&&b.length>=4&&editDistance(a,b)<=(a.length>=7?2:1))return .72;
+  return 0;
+}
+export function candidateScore(query,track){
+  const target=[...new Set(meaningful(query))],title=meaningful(track.title),artist=meaningful(track.uploader),candidate=[...new Set([...title,...artist])];
+  if(!target.length||!candidate.length||!versionMatches(query,track.title))return -1;
+  const matches=target.map(t=>Math.max(0,...candidate.map(c=>similarity(t,c))));
+  const coverage=matches.reduce((a,b)=>a+b,0)/target.length;
+  if(coverage<.64||!target.some(t=>title.some(c=>similarity(t,c)>0)))return -1;
+  const exact=matches.every(m=>m===1);
+  const titleMatches=target.filter(t=>title.includes(t)).length;
+  return Math.round(coverage*100)+(exact?35:0)+(normalize(query)===normalize(track.title)?25:0)+(titleMatches?8:0)-Math.min(15,Math.max(0,candidate.length-target.length));
+}
+function strictMatch(query,track){
+  const target=meaningful(query),all=meaningful(track.title+' '+track.uploader);
+  return target.length>0&&versionMatches(query,track.title)&&target.every(t=>all.includes(t));
 }
 export function rankCandidates(query,tracks){
-  return tracks.filter(t=>validTrackUrl(t.url)).map(t=>({track:t,score:score(query,t)})).filter(x=>x.score>=0).sort((a,b)=>b.score-a.score).map(x=>x.track);
+  const unique=new Map();
+  for(const t of tracks??[])if(validTrackUrl(t?.url)&&t.title&&!unique.has(t.url))unique.set(t.url,t);
+  return [...unique.values()].map(t=>({track:t,score:candidateScore(query,t)})).filter(x=>x.score>=0).sort((a,b)=>b.score-a.score).map(x=>x.track);
 }
 async function spotifyInfo(url){
   const data=await json('https://open.spotify.com/oembed?url='+encodeURIComponent(url));
@@ -85,38 +110,91 @@ async function youtubeInfo(url){
   return {title,artist,artwork:safeArtworkUrl(d.thumbnail_url)};
 }
 function deadline(p,ms){let timer;return Promise.race([p,new Promise((_,reject)=>{timer=setTimeout(()=>reject(new Error('Tempo de busca excedido')),ms);})]).finally(()=>clearTimeout(timer));}
-async function searchPlayable(query,{search,inspect,onlySoundCloud=false}){
-  let candidates=[],failure=null;
-  try{candidates=rankCandidates(query,await deadline(search(query),8000));}catch{}
-  // Mais de uma opção: uma faixa removida não invalida toda a pesquisa.
-  const checked=await Promise.allSettled(candidates.slice(0,3).map(candidate=>inspect(candidate.url)));
-  for(const result of checked){
-    if(result.status==='fulfilled'&&score(query,result.value)>=0&&(!onlySoundCloud||trackPlatform(result.value.url)==='soundcloud'))return result.value;
-    if(result.status==='rejected')failure=result.reason;
-  }
-  if(!onlySoundCloud){
+function suggestionError(tracks){
+  const e=new Error('Encontrei algumas versões próximas. Escolha a música correta no menu.');
+  e.code='FM_CHOOSE_TRACK';e.suggestions=tracks.slice(0,5);return e;
+}
+async function searchPlayable(query,{search,inspect,discover,catalog,onlySoundCloud=false,strict=false}){
+  let failure=null;
+  const variants=[query];
+  const simplified=meaningful(query).join(' ');
+  if(simplified&&normalize(query)!==simplified)variants.push(simplified);
+  const discoverFor=q=>Promise.allSettled([
+    deadline(search(q,15),9000),
+    ...(discover?[discover(q,'soundcloud',15),...(!onlySoundCloud?[discover(q,'youtube',15)]:[])]:[]),
+  ]);
+  const results=await discoverFor(variants[0]);
+  let candidates=[];
+  for(const result of results){if(result.status==='fulfilled')candidates.push(...(result.value??[]));else failure=result.reason;}
+  // Catalog is metadata only. It can identify a misspelled title or missing artist.
+  // Don't assume the catalog result is playable.
+  if(discover&&catalog){
     try{
-      const info=await inspect('ytsearch1:'+query);
-      if(score(query,info)>=0)return info;
-    }catch(error){failure=error;}
+      const metadata=await deadline(catalog(query),6500);
+      for(const t of metadata.slice(0,2)){
+        const full=clean(t.trackName)+' '+clean(t.artistName);
+        if(candidateScore(query,{title:t.trackName,uploader:t.artistName})>=90&&!variants.some(v=>normalize(v)===normalize(full)))variants.push(full);
+      }
+    }catch{}
   }
+  const accepted=[],nearby=[],visited=new Set();
+  const inspectBatch=async(list)=>{
+    const ranked=rankCandidates(query,list).filter(t=>!visited.has(t.url)&&(!onlySoundCloud||trackPlatform(t.url)==='soundcloud')).slice(0,8);
+    // Limit concurrency; never inspect a whole playlist or dozens of tracks at once.
+    for(let i=0;i<ranked.length;i+=4){
+      const batch=ranked.slice(i,i+4);
+      batch.forEach(t=>visited.add(t.url));
+      const checked=await Promise.allSettled(batch.map(t=>inspect(t.url)));
+      for(const result of checked){
+        if(result.status==='rejected'){failure=result.reason;continue;}
+        const t=result.value;
+        if(!validTrackUrl(t?.url)||onlySoundCloud&&trackPlatform(t.url)!=='soundcloud'||candidateScore(query,t)<0)continue;
+        if(strictMatch(query,t))accepted.push(t);
+        else if(!strict)nearby.push(t);
+      }
+      if(accepted.length)break;
+    }
+  };
+  await inspectBatch(candidates);
+  if(!accepted.length&&discover&&variants.length>1){
+    // One additional focused search, rather than unlimited retries.
+    const next=await discoverFor(variants.at(-1));
+    for(const r of next){if(r.status==='fulfilled')candidates.push(...(r.value??[]));else failure=r.reason;}
+    await inspectBatch(candidates);
+  }
+  if(accepted.length){
+    const ranked=rankCandidates(query,accepted);
+    // Exact titles shared by different artists are ambiguous. Let the listener decide.
+    const top=ranked[0];
+    const ambiguous=!strict&&ranked.filter(t=>normalize(t.title)===normalize(top.title)&&normalize(t.uploader)!==normalize(top.uploader));
+    if(ambiguous?.length)throw suggestionError([top,...ambiguous]);
+    return top;
+  }
+  // Compatibility for callers with an injected old search adapter (tests).
+  if(!discover&&!onlySoundCloud){
+    try{const info=await inspect('ytsearch1:'+query);if(strictMatch(query,info)&&validTrackUrl(info.url))return info;}catch(error){failure=error;}
+  }
+  if(nearby.length&&!strict)throw suggestionError(rankCandidates(query,nearby));
   if(failure?.code==='EXTRACTOR_MISSING')throw failure;
-  throw new Error('Não encontrei uma versão disponível que corresponda ao pedido. Tente nome + artista ou o link exato da faixa.');
+  throw new Error('Não encontrei uma faixa pública reproduzível que corresponda ao pedido. Tente outro nome ou artista.');
 }
 function youtubeSearchQuery(meta){
   const title=clean(meta.title).replace(/\s*[\[(](?:official (?:music )?video|official audio|lyric(?:s| video)?|clipe oficial|audio oficial|visualizer)[\])]\s*/gi,' ').trim();
   const artist=clean(meta.artist).replace(/VEVO$/i,'').replace(/\s+-\s+Topic$/i,'').trim();
-  return contains(title,artist)?title:(title+' '+artist).trim();
+  // Music videos commonly encode artist and track in the title; uploader may be a label.
+  if(/\s[-–—|]\s/.test(title))return title;
+  return artist&&contains(title,artist)?title:(title+' '+artist).trim();
 }
 export async function resolveFmTrack(query,deps={}){
   query=clean(query);
   if(!validQuery(query))throw new Error('Use nome + artista ou link de uma faixa individual do SoundCloud, YouTube ou Spotify.');
   const inspect=deps.inspect??readTrackMetadata,search=deps.search??searchSoundCloudCandidates,catalog=deps.catalog??catalogSearch,spotify=deps.spotify??spotifyInfo;
   const platform=trackPlatform(query);
+  const discover=deps.discover??(deps.search?null:discoverFmTracks);
   let track,requested,sourceFallback=false;
   if(platform==='spotify'){
     requested=await spotify(query);
-    track=await searchPlayable(requested.title+' '+requested.artist,{search,inspect});
+    track=await searchPlayable(requested.title+' '+requested.artist,{search,inspect,discover,catalog,strict:true});
   }else if(platform){
     try{track=await inspect(query);}
     catch(error){
@@ -126,16 +204,17 @@ export async function resolveFmTrack(query,deps={}){
       // e procurar outra publicação compatível. Não tenta contornar o bloqueio.
       try{
         const meta=await (deps.youtube??youtubeInfo)(query);
-        track=await searchPlayable(youtubeSearchQuery(meta),{search,inspect,onlySoundCloud:true});
+        track=await searchPlayable(youtubeSearchQuery(meta),{search,inspect,discover,catalog,onlySoundCloud:true,strict:true});
         sourceFallback=true;
       }catch(fallbackError){
         if(fallbackError?.code==='EXTRACTOR_MISSING')throw fallbackError;
+        if(error?.code==='SOURCE_RESTRICTED')throw Object.assign(new Error('O YouTube bloqueou o áudio e não encontrei uma versão pública correspondente no SoundCloud. Pesquise pelo título ou artista para ver alternativas.'),{code:error.code});
         throw error?.code?error:fmSourceError('SOURCE_UNAVAILABLE');
       }
     }
     if(!sourceFallback&&trackPlatform(track.url)!==platform)throw new Error('Não consegui confirmar a fonte original dessa faixa.');
   }else{
-    track=await searchPlayable(query,{search,inspect});
+    track=await searchPlayable(query,{search,inspect,discover,catalog});
   }
   if(!validTrackUrl(track.url))throw new Error('Fonte de áudio incompatível.');
   let album=null;
