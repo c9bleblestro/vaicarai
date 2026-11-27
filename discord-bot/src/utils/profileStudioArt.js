@@ -114,7 +114,7 @@ export async function drawStudioProfile(p,h){
     pill(x,y,w,66);
     if(!h.drawProfileStatIcon(ctx,sheet,i,x+11,y+8,50)){ctx.save();h.STAT_ICON_CONFIGS[i].fallback(ctx,x+11,y+8,50);ctx.restore();}
     fit(ctx,stats[i][0],x+74,y+22,270,15,panelInk,false);
-    fit(ctx,stats[i][1],x+74,y+47,i>=4?222:280,23,panelInk);
+    fit(ctx,stats[i][1],x+74,y+47,i===1?138:i>=4?222:280,23,panelInk);
     if(i===1){
       const progress=Math.min(1,Math.max(0,level.needed?level.current/level.needed:0)),bw=132,bx=x+220;
       ctx.fillStyle=h.isColorDark(panel)?'#ffffff22':'#00000015';h.roundRect(ctx,bx,y+40,bw,8,4);ctx.fill();

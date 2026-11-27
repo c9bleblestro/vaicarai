@@ -20,7 +20,7 @@ const label=v=>typeof v==='string'?v:v.name;
 export function buildProfileStudioPayload(userId,profile){
   const a=profileAppearance(profile);
   const select=(key,title)=>row(new StringSelectMenuBuilder().setCustomId('profile_studio:'+key+':'+userId).setPlaceholder(title).addOptions(Object.entries(groups[key].options).map(([value,name])=>({label:label(name),value,default:a[key]===value}))));
-  return {content:'## ✧ Estúdio de perfil\nEscolha seu visual. As alterações são salvas apenas no seu perfil.\n**Tema:** '+PROFILE_THEMES[a.theme].name+' • **Animação:** '+PROFILE_EFFECTS[a.effect]+'\n**Decoração:** '+PROFILE_DECORS[a.decor]+'\n-# Suas cores personalizadas de fundo e painel têm prioridade sobre o tema. O clássico mantém o layout anterior.\n-# Banner, argola, moldura VIP, pet, conquistas e cores continuam no menu original. Use Atualizar no perfil público para aplicar as escolhas.',components:[
+  return {content:'## ✧ Estúdio de perfil\nEscolha seu visual. As alterações são salvas apenas no seu perfil.\n**Tema:** '+PROFILE_THEMES[a.theme].name+' • **Animação:** '+PROFILE_EFFECTS[a.effect]+'\n**Decoração:** '+PROFILE_DECORS[a.decor]+'\n-# Suas cores personalizadas de fundo e painel têm prioridade sobre o tema. O clássico mantém o layout anterior, sem decoração ou assinatura nova.\n-# Banner, argola, moldura VIP, pet, conquistas e cores continuam no menu original. Use Atualizar no perfil público para aplicar as escolhas.',components:[
     select('theme','Escolha um tema'),select('effect','Escolha uma animação'),select('decor','Escolha uma decoração'),
     row(new ButtonBuilder().setCustomId('profile_studio:signature:'+userId).setLabel('Assinatura').setStyle(ButtonStyle.Secondary),new ButtonBuilder().setCustomId('profile_studio:preview:'+userId).setLabel('Prévia real').setStyle(ButtonStyle.Primary),new ButtonBuilder().setCustomId('profile_studio:reset:'+userId).setLabel('Restaurar visual').setStyle(ButtonStyle.Secondary))
   ],allowedMentions};
@@ -32,12 +32,11 @@ export async function handleProfileStudio(i){
   const where={userId:i.user.id};
   if(i.customId==='profile_menu'){
     // profile_menu is shared with the old shop; only this user's preferences can be edited.
-    return i.reply({...buildProfileStudioPayload(i.user.id,await prisma.userProfile.findUnique({where})),flags:PRIVATE});
+    await i.deferReply({flags:PRIVATE});
+    return i.editReply(buildProfileStudioPayload(i.user.id,await prisma.userProfile.findUnique({where})));
   }
   if(action==='signature'&&i.isButton()){
-    const p=await prisma.userProfile.findUnique({where});
     const input=new TextInputBuilder().setCustomId('signature').setLabel('Assinatura (vazio para remover)').setStyle(TextInputStyle.Short).setMaxLength(42).setRequired(false);
-    if(p?.profileSignature)input.setValue(p.profileSignature.slice(0,42));
     return i.showModal(new ModalBuilder().setCustomId('profile_studio:signature:'+i.user.id).setTitle('Sua assinatura').addComponents(row(input)));
   }
   if(action==='preview'&&i.isButton()){

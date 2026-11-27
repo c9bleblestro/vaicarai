@@ -37,7 +37,7 @@ async function fetchProfileData(userId, guildId) {
 }
 
 export async function renderProfileAttachment(cardParams) {
-  const banner = await resolveBanner(
+  const banner = cardParams._resolvedBanner ?? await resolveBanner(
     cardParams.activeBanner,
     cardParams.guildId,
     { includeImageData: true },
@@ -107,7 +107,7 @@ export async function buildProfilePayload({ userId, guildId, guild, target, incl
     activePetEmoji = pet?.emoji ?? null;
   }
 
-  const streaks=await listInteractionStreaks(guildId,userId).catch(()=>[]);
+  const streaks=profile?.marriedTo||profile?.bestFriendId?await listInteractionStreaks(guildId,userId).catch(()=>[]):[];
   const appearance=normalizeAppearance({theme:profile?.profileTheme,effect:profile?.profileEffect,decor:profile?.profileDecor,signature:profile?.profileSignature});
   const cardParams = {
     appearance,
