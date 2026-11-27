@@ -6,6 +6,7 @@ import prisma,{ensureProfileStudioSchema} from '../src/database/client.js';
 import {generateProfileCard} from '../src/utils/profileCard.js';
 import {generateAnimatedProfileCard,buildMotionTimeline} from '../src/utils/animatedProfileCard.js';
 import {renderProfileAttachment} from '../src/commands/general/perfil.js';
+import {ECONOMY_COSMETICS} from '../src/utils/economyProgress.js';
 import {PROFILE_THEMES,PROFILE_EFFECTS,PROFILE_DECORS,normalizeAppearance} from '../src/utils/profileStudioArt.js';
 import {buildProfileStudioPayload,saveProfileAppearance,profileAppearance} from '../src/utils/profileStudio.js';
 
@@ -63,7 +64,7 @@ test('estúdio oferece opções, valida seleção e salva somente a preferência
     assert.equal(payload.components.length,4);
     for(const [i,options] of [PROFILE_THEMES,PROFILE_EFFECTS,PROFILE_DECORS].entries()){
       const select=payload.components[i].toJSON().components[0];
-      assert.equal(select.options.length,Object.keys(options).length);assert.ok(select.custom_id.endsWith(userId));
+      assert.equal(select.options.length,Object.keys(options).filter(k=>!Object.hasOwn(ECONOMY_COSMETICS,k)).length);assert.ok(select.custom_id.endsWith(userId));
       assert.equal(select.options.filter(o=>o.default).length,1);
     }
     await saveProfileAppearance(userId,guildId,'effect','off');
