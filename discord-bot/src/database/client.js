@@ -670,4 +670,8 @@ export async function ensurePetLifeSchema() {
   await prisma.$executeRaw`CREATE INDEX IF NOT EXISTS "PetLife_guildId_xp_idx" ON "PetLife" ("guildId","xp")`;
 }
 
+export async function ensureInstaVoteSchema() {
+  await prisma.$executeRaw`CREATE TABLE IF NOT EXISTS "InstaVote" ("postId" TEXT NOT NULL, "userId" TEXT NOT NULL, "vote" INTEGER NOT NULL, PRIMARY KEY ("postId","userId"))`;
+}
+
 export default prisma;
