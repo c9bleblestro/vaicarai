@@ -52,3 +52,17 @@ export function makeWorkChallenge(job,random=Math.random){
   options=[...options];for(let i=options.length-1;i>0;i--){const j=Math.floor(random()*(i+1));[options[i],options[j]]=[options[j],options[i]];}
   return {prompt,options,correctIndex:options.indexOf(correct)};
 }
+
+export const ECONOMY_COSMETICS=Object.freeze({
+  eco_blossom:'Flores de cerejeira (7 dias)',
+  eco_pearl:'Pérolas lunares (14 dias)',
+  eco_crown:'Coroa dourada (30 dias)',
+  eco_silver:'Estrelas de prata (baú semanal)',
+  eco_gold:'Constelação dourada (baú mensal)'
+});
+export function cosmeticCandidates(kind,streak,random=Math.random){
+  if(kind==='daily')return [7,14,30].flatMap((n,i)=>streak>=n?[['eco_blossom','eco_pearl','eco_crown'][i]]:[]);
+  if(kind==='weekly'&&random()<.10)return ['eco_silver'];
+  if(kind==='monthly'&&random()<.25)return ['eco_gold'];
+  return [];
+}
