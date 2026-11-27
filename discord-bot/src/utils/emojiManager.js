@@ -67,6 +67,7 @@ const REQUIRED_EMOJIS = [
   // ── Feed do Instagram ─────────────────────────────────────────────────────
   { name: 'insta_comment',   asset: 'insta-comment.webp', mime: 'image/webp', fallback: '💬' },
   { name: 'insta_like',      asset: 'insta-like.webp',    mime: 'image/webp', fallback: '💜' },
+  { name: 'insta_white_header', inline: 'header', mime: 'image/png', fallback: '▫️' },
   { name: 'insta_white_like', inline: 'like', mime: 'image/png', fallback: '✔️' },
   { name: 'insta_white_dislike', inline: 'dislike', mime: 'image/png', fallback: '✖️' },
   { name: 'insta_white_delete', inline: 'delete', mime: 'image/png', fallback: '🗑️' },
