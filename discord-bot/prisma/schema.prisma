@@ -588,6 +588,10 @@ model UserProfile {
   cardBg1          String?
   cardBg2          String?
   cardPanelColor   String?
+  profileTheme     String    @default("rose")
+  profileEffect    String    @default("off")
+  profileDecor     String    @default("floral")
+  profileSignature String?
   walletBg         String?
   walletRing       String?
   walletRingBorder String?

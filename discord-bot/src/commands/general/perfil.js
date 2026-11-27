@@ -11,6 +11,8 @@ import { getMemberLevel } from '../../utils/chatLevel.js';
 import { generateProfileCard }         from '../../utils/profileCard.js';
 import { generateAnimatedProfileCard, generateStaticProfileGifCard } from '../../utils/animatedProfileCard.js';
 import { resolveBanner }               from '../../utils/shopData.js';
+import { normalizeAppearance } from '../../utils/profileStudioArt.js';
+import { listInteractionStreaks } from '../../utils/interactionStreak.js';
 import { isGifProfileBanner }           from '../../utils/profileBannerFormat.js';
 import { getEmoji }                    from '../../utils/emojiManager.js';
 
@@ -34,7 +36,7 @@ async function fetchProfileData(userId, guildId) {
   return { eco, profile, purchases, guildBadgeEmojis, chatLevel };
 }
 
-async function renderProfileAttachment(cardParams) {
+export async function renderProfileAttachment(cardParams) {
   const banner = await resolveBanner(
     cardParams.activeBanner,
     cardParams.guildId,
@@ -43,7 +45,8 @@ async function renderProfileAttachment(cardParams) {
   const bannerIsGif = isGifProfileBanner(banner);
   const renderParams = { ...cardParams, _resolvedBanner: banner };
 
-  if (bannerIsGif) {
+  const effect=normalizeAppearance(cardParams.appearance).effect;
+  if (effect!=='off'&&(bannerIsGif||effect!=='banner')) {
     try {
       return {
         buf: await generateAnimatedProfileCard(renderParams),
@@ -52,7 +55,7 @@ async function renderProfileAttachment(cardParams) {
     } catch (error) {
       // A tentativa animada precisa terminar antes do renderizador estático:
       // o encoder nativo não pode ser cancelado com segurança.
-      console.warn('[perfil] Não foi possível animar o banner; usando GIF estático:', error?.message ?? error);
+      console.warn('[perfil] Não foi possível animar; usando GIF estático:', error?.message ?? error);
       return {
         buf: await generateStaticProfileGifCard(renderParams),
         filename: 'perfil.gif',
@@ -72,6 +75,7 @@ function profileEditMenu() {
       .setCustomId('profile_menu')
       .setPlaceholder('✨ Personalizar perfil...')
       .addOptions([
+        { label: 'Estúdio de perfil', value: 'profile_studio', emoji: '✨' },
         { label: 'Banner',      value: 'profile_banner_btn',     emoji: '🖼️' },
         { label: 'Argola',      value: 'profile_ring_btn',       emoji: '💠' },
         { label: 'Molduras VIP', value: 'profile_ring_vip',      emoji: '👑' },
@@ -103,7 +107,12 @@ export async function buildProfilePayload({ userId, guildId, guild, target, incl
     activePetEmoji = pet?.emoji ?? null;
   }
 
+  const streaks=await listInteractionStreaks(guildId,userId).catch(()=>[]);
+  const appearance=normalizeAppearance({theme:profile?.profileTheme,effect:profile?.profileEffect,decor:profile?.profileDecor,signature:profile?.profileSignature});
   const cardParams = {
+    appearance,
+    marriedStreak: streaks.find(s=>s.partnerId===profile?.marriedTo)?.days??0,
+    friendStreak: streaks.find(s=>s.partnerId===profile?.bestFriendId)?.days??0,
     username:        member?.displayName ?? target.username,
     avatarUrl:       target.displayAvatarURL({ extension: 'png', size: 256 }),
     balance:         eco?.balance          ?? 0,
@@ -134,6 +143,8 @@ export async function buildProfilePayload({ userId, guildId, guild, target, incl
   return {
     files: [new AttachmentBuilder(buf, { name: filename })],
     components,
+    content: null,
+    allowedMentions: {parse:[],repliedUser:false},
   };
 }
 
@@ -177,6 +188,7 @@ export default {
       guildId: message.guildId,
       guild: message.guild,
       target,
+      includeCustomization: target.id===message.author.id,
     }));
   },
 };

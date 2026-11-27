@@ -55,6 +55,7 @@ import {
   COLOR_MAP,
 } from '../utils/containerSessions.js';
 import { handleShopInteraction } from '../utils/shopHandlers.js';
+import { handleProfileStudio } from '../utils/profileStudio.js';
 import { buildProfilePayload } from '../commands/general/perfil.js';
 import { handleStreakCollectionPage } from '../commands/interacoes/foguinho.js';
 import { buildWalletCard, walletRefreshRow } from '../commands/economia/pf.js';
@@ -624,6 +625,7 @@ export default {
         }
       }
 
+      if ((interaction.isButton() || interaction.isModalSubmit() || interaction.isStringSelectMenu()) && interaction.customId?.startsWith('profile_studio:')) return handleProfileStudio(interaction);
       if ((interaction.isButton() || interaction.isModalSubmit() || interaction.isStringSelectMenu() || interaction.isUserSelectMenu()) && interaction.customId.startsWith('fm:')) return handleFmInteraction(interaction);
       if (interaction.isButton() && await handleDeathEventInteraction(interaction, client)) return;
       if (interaction.isButton() && interaction.customId.startsWith('foguinho_page:')) {
@@ -1175,6 +1177,7 @@ export default {
         // ── PERFIL: Menu de personalização ───────────────────────────────────
         if (interaction.customId === 'profile_menu') {
           const selectedId = interaction.values[0];
+          if (selectedId === 'profile_studio') return handleProfileStudio(interaction);
 
           if (selectedId === 'profile_conquistas_btn') {
             const { computeEarnedBadgeKeys, BADGE_DEFS } = await import('../utils/profileCard.js');
@@ -1396,13 +1399,13 @@ export default {
             if (isProfile) {
               const includeCustomization = interaction.message.components
                 ?.some(row => row.components?.some(component => component.customId === 'profile_menu'));
-              return interaction.editReply(await buildProfilePayload({
+              return interaction.editReply({attachments:[],...await buildProfilePayload({
                 userId,
                 guildId: interaction.guildId,
                 guild: interaction.guild,
                 target,
                 includeCustomization,
-              }));
+              })});
             }
 
             const file = await buildWalletCard(userId, interaction.guildId, interaction.guild, target);
