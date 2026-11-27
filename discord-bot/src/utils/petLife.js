@@ -29,7 +29,7 @@ export function petMood(s){
   return s.happiness>=75?'Feliz':'Tranquilo';
 }
 export function petCooldown(row,eco,action,now=Date.now()){
-  const rule=CARE_ACTIONS[action];if(!rule)return 0;
+  const rule=Object.hasOwn(CARE_ACTIONS,action)?CARE_ACTIONS[action]:null;if(!rule)return 0;
   return Math.max(0,ts(rule.min!=null?eco[rule.field]:row[rule.field])+(rule.cd??CARE_CD)-now);
 }
 export async function activeCompanion(userId,guildId,db=prisma){
@@ -66,9 +66,14 @@ export async function changePetWorld({userId,guildId,petId,action,theme,now=Date
         const life=await tx.petLife.findUnique({where});
         const ecoWhere={userId_guildId:{userId,guildId}};
         const eco=await tx.economy.findUnique({where:ecoWhere});
-        const stats=petStats(life,now),data={...stats,careAt:new Date(now),revision:{increment:1}};
+        const stats=petStats(life,now);
+        // Preserve fractional hours of elapsed care time instead of resetting
+        // the decay clock on every 20-minute action.
+        const elapsed=Math.max(0,now-ts(life.careAt));
+        const careAt=elapsed>=72*3600000?now:Math.min(now,ts(life.careAt)+Math.floor(elapsed/3600000)*3600000);
+        const data={...stats,careAt:new Date(careAt),revision:{increment:1}};
         let amount=0,xp=0,notice='',ecoFilter={userId,guildId},ecoData=null;
-        const rule=CARE_ACTIONS[action],away=life.adventureUntil&&ts(life.adventureUntil)>now;
+        const rule=Object.hasOwn(CARE_ACTIONS,action)?CARE_ACTIONS[action]:null,away=life.adventureUntil&&ts(life.adventureUntil)>now;
         if(rule){
           if(away)return {ok:false,reason:'away',remaining:ts(life.adventureUntil)-now};
           const remaining=petCooldown(life,eco,action,now);
