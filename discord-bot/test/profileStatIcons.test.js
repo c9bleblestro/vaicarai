@@ -33,7 +33,7 @@ test('perfil PNG conserva banner equipado, dados variáveis e dimensões',async(
   const second=await generateProfileCard({...params,xp:800,balance:1234,_bannerImage:banner,_returnCanvas:true});
   assert.equal(first.width,800);assert.equal(first.height,600);
   assert.deepEqual([...first.getContext('2d').getImageData(500,80,1,1).data],[17,204,119,255]);
-  assert.notDeepEqual(first.toBuffer('image/png'),second.toBuffer('image/png'));
+  assert.ok(!first.toBuffer('image/png').equals(second.toBuffer('image/png')),'alterações de XP e saldo devem alterar a imagem');
   const png=await generateProfileCard({...params,_bannerImage:banner});
   assert.equal(png.subarray(0,8).toString('hex'),'89504e470d0a1a0a');
 });

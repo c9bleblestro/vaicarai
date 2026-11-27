@@ -8,6 +8,8 @@ import { GifEncoder, createCanvas, loadImage } from '@napi-rs/canvas';
 import { parseGIF, decompressFrames } from 'gifuct-js';
 import { generateProfileCard } from './profileCard.js';
 import { resolveBanner }      from './shopData.js';
+import { isGifProfileBanner } from './profileBannerFormat.js';
+import { drawProfileEffect, normalizeAppearance } from './profileStudioArt.js';
 
 // ── Detecção de GIF ───────────────────────────────────────────────────────────
 
@@ -47,14 +49,18 @@ async function fetchGifFrames(banner, maxFrames = 6) {
 
   // Decodifica
   const gif    = parseGIF(gifBuffer.buffer.slice(gifBuffer.byteOffset, gifBuffer.byteOffset + gifBuffer.byteLength));
-  const frames = decompressFrames(gif, true);
-  if (!frames?.length) throw new Error('GIF sem frames');
+  if(gifBuffer.length>8*1024*1024)throw new Error('GIF muito grande');
 
   const gW = gif.lsd.width;
   const gH = gif.lsd.height;
   if (!gW || !gH || gW * gH > 12_000_000) {
     throw new Error(`GIF grande demais (${gW}x${gH})`);
   }
+
+  const sourceFrames=gif.frames.filter(f=>f.image);
+  if(sourceFrames.length>240||sourceFrames.length*gW*gH>100_000_000)throw new Error('GIF complexo demais');
+  const frames=decompressFrames(gif,true);
+  if(!frames.length)throw new Error('GIF sem frames');
 
   // Canvas de composição
   const compCanvas = createCanvas(gW, gH);
@@ -63,24 +69,28 @@ async function fetchGifFrames(banner, maxFrames = 6) {
   // Amostragem: se o GIF tem muitos frames, pega 1 a cada N
   const step     = Math.max(1, Math.ceil(frames.length / maxFrames));
   const selected = [];
+  const patchCanvas=createCanvas(gW,gH),patchCtx=patchCanvas.getContext('2d');
 
   for (let i = 0; i < frames.length; i++) {
     const frame = frames[i];
 
     // Compõe o patch deste frame no canvas acumulado
-    const patchData = compCtx.createImageData(frame.dims.width, frame.dims.height);
+    const previous=frame.disposalType===3?compCtx.getImageData(0,0,gW,gH):null;
+    const patchData=patchCtx.createImageData(frame.dims.width,frame.dims.height);
     patchData.data.set(frame.patch);
-    compCtx.putImageData(patchData, frame.dims.left, frame.dims.top);
+    patchCtx.clearRect(0,0,gW,gH);patchCtx.putImageData(patchData,0,0);
+    compCtx.drawImage(patchCanvas,0,0,frame.dims.width,frame.dims.height,frame.dims.left,frame.dims.top,frame.dims.width,frame.dims.height);
 
     if (i % step === 0) {
       // Exporta o estado atual como PNG e recarrega como Image
       const pngBuf = compCanvas.toBuffer('image/png');
       const image  = await loadImage(pngBuf);
-      const delay  = Math.max((frame.delay ?? 10) * 10, 40); // centisec → ms, mín 40ms
+      const delay = Math.max(40, Math.min(6000, frames.slice(i,i+step).reduce((total,f)=>total+Math.max(20,f.delay??100),0))); // gifuct-js already returns ms
       selected.push({ image, delayMs: delay });
     }
 
     // Disposal: limpa a região para o próximo frame se necessário
+    if(previous)compCtx.putImageData(previous,0,0);
     if (frame.disposalType === 2) {
       compCtx.clearRect(frame.dims.left, frame.dims.top, frame.dims.width, frame.dims.height);
     }
@@ -119,45 +129,35 @@ export async function generateAnimatedProfileCard(params) {
     guildId,
     { includeImageData: true },
   );
-  if (!banner?.imageUrl && !banner?.imageBuffer) {
-    throw new Error('Banner não encontrado para card animado');
-  }
-
-  const gifFrames = await fetchGifFrames(banner);
-  if (!gifFrames.length) throw new Error('Nenhum frame extraído do GIF');
-
-  console.log(`[animCard] ${gifFrames.length} frames extraídos de "${banner.key ?? 'custom'}"`);
-
-  // Pré-renderiza elementos estáticos como imagem (tudo exceto o banner).
-  // O primeiro frame do banner é usado para gerar a base (posição do avatar, etc.).
-  // A partir do 2º frame, o cache de imagens dentro de generateProfileCard
-  // garante que avatar/emojis não sejam re-buscados.
-
-  const encoder = new GifEncoder(W, H, { repeat: 0, quality: 8 });
-  try {
-    for (let fi = 0; fi < gifFrames.length; fi++) {
-      const { image: bannerFrame, delayMs } = gifFrames[fi];
-
-      // Renderiza o card com este frame de banner
-      const frameCanvas = await generateProfileCard({
-        ...params,
-        _bannerImage:  bannerFrame,  // pula o loadUrl do banner
-        _resolvedBanner: banner,
-        _returnCanvas: true,          // retorna o canvas em vez de PNG
-      });
-
-      // Extrai RGBA e adiciona ao GIF
-      const ctx  = frameCanvas.getContext('2d');
-      const data = ctx.getImageData(0, 0, W, H);
-      encoder.addFrame(new Uint8Array(data.data.buffer), W, H, { delay: delayMs });
+  const appearance=params.appearance?normalizeAppearance(params.appearance):{theme:'classic',effect:'banner'};
+  const effect=appearance.effect;
+  let gifFrames=[];
+  if(isGifProfileBanner(banner)){
+    try{gifFrames=await fetchGifFrames(banner,12);}catch(error){
+      if(effect==='banner')throw error;
+      console.warn('[animCard] Banner estático no efeito:',error?.message??error);
     }
-
-    const gifBuffer = encoder.finish();
-    console.log(`[animCard] GIF pronto: ${(gifBuffer.length / 1024).toFixed(0)} KB`);
-    return gifBuffer;
-  } finally {
-    encoder.dispose();
   }
+  const hasEffect=!['off','banner'].includes(effect);
+  if(!gifFrames.length&&!hasEffect)throw new Error('Não há animação selecionada para este banner.');
+  const count=hasEffect?12:gifFrames.length;
+  const base=gifFrames.length?null:await generateProfileCard({...params,_resolvedBanner:banner,_returnCanvas:true});
+  const bases=new Map();
+  const encoder=new GifEncoder(W,H,{repeat:0,quality:8});
+  try{
+    for(let i=0;i<count;i++){
+      const index=gifFrames.length?Math.floor(i*gifFrames.length/count):0;
+      const f=gifFrames[index];
+      if(f&&!bases.has(index))bases.set(index,await generateProfileCard({...params,_bannerImage:f.image,_resolvedBanner:banner,_returnCanvas:true}));
+      const frame=createCanvas(W,H),ctx=frame.getContext('2d');
+      ctx.drawImage(base??bases.get(index),0,0);
+      if(hasEffect)drawProfileEffect(ctx,appearance,i/count);
+      encoder.addFrame(new Uint8Array(ctx.getImageData(0,0,W,H).data.buffer),W,H,{delay:hasEffect?140:f.delayMs});
+    }
+    const result=encoder.finish();
+    if(result.length>8*1024*1024)throw new Error('GIF de perfil excedeu 8 MB');
+    return result;
+  }finally{encoder.dispose();}
 }
 
 /**

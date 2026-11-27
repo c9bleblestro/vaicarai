@@ -645,4 +645,12 @@ export async function ensureCommunityRadioSchema() {
   await prisma.$executeRaw`ALTER TABLE "CommunityRadio" ALTER COLUMN "textChannelId" DROP NOT NULL`;
 }
 
+export async function ensureProfileStudioSchema() {
+  await prisma.$executeRaw`ALTER TABLE "UserProfile"
+    ADD COLUMN IF NOT EXISTS "profileTheme" TEXT NOT NULL DEFAULT 'rose',
+    ADD COLUMN IF NOT EXISTS "profileEffect" TEXT NOT NULL DEFAULT 'off',
+    ADD COLUMN IF NOT EXISTS "profileDecor" TEXT NOT NULL DEFAULT 'floral',
+    ADD COLUMN IF NOT EXISTS "profileSignature" TEXT`;
+}
+
 export default prisma;

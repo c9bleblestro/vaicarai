@@ -4,6 +4,7 @@ import { dirname, join } from 'path';
 import { readFileSync } from 'fs';
 import { resolveBanner, getRingColors, drawAvatarRing } from './shopData.js';
 import { xpProgress } from './chatLevelMath.js';
+import { drawStudioProfile, normalizeAppearance } from './profileStudioArt.js';
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname  = dirname(__filename);
@@ -441,11 +442,21 @@ export async function generateProfileCard({
   marriedToName = null, bestFriendName = null, bio = null,
   cardBg1 = null, cardBg2 = null, cardPanelColor = null,
   xp = 0, reps = 0, chatLevel = null,
+  appearance = null, marriedStreak = 0, friendStreak = 0,
   // Parâmetros internos para geração de GIF animado:
   _bannerImage = null,   // Image já carregada — pula o loadUrl do banner
   _resolvedBanner = null, // Banner já resolvido — evita nova consulta/download
   _returnCanvas = false, // se true, retorna o canvas em vez de PNG buffer
 }) {
+  if (appearance && normalizeAppearance(appearance).theme !== 'classic') {
+    return drawStudioProfile({
+      username, avatarUrl, balance, bank, activeBanner, purchases, activeRing, ringBorderColor, activePet,
+      guildBadgeEmojis, guildId, marriedToName, bestFriendName, bio, cardBg1, cardBg2, cardPanelColor,
+      xp, reps, chatLevel, appearance, marriedStreak, friendStreak, _bannerImage, _resolvedBanner, _returnCanvas,
+    }, { loadUrl, loadEmojiImg, drawBioWithEmojis, loadProfileStatIconSheet, drawProfileStatIcon,
+      computeLevel, computeEarnedBadgeKeys, BADGE_DEFS, fmtCompact, drawAvatarRing, resolveBanner,
+      roundRect, isColorDark, STAT_ICON_CONFIGS });
+  }
   const canvas = createCanvas(W, H);
   const ctx    = canvas.getContext('2d');
 
