@@ -292,7 +292,7 @@ export async function buildTriggerConfigPayload(guildId) {
   const container = new ContainerBuilder().addTextDisplayComponents(
     new TextDisplayBuilder().setContent([
       `**Gatilhos** — ${triggers.length} gatilho(s) ativo(s)`,
-      'Painel › Funções › Gatilhos',
+      'Painel › Funções › Gatilhos de mídia',
       '',
       'Quando alguém escrever uma palavra ou frase que contenha uma palavra-chave, o bot responde automaticamente com o arquivo salvo somente neste servidor.',
       '',
@@ -325,8 +325,12 @@ export async function buildTriggerConfigPayload(guildId) {
   rows.push(new ActionRowBuilder().addComponents(
     new ButtonBuilder()
       .setCustomId('trigger_add')
-      .setLabel('Adicionar')
+      .setLabel('Adicionar mídia')
       .setStyle(ButtonStyle.Success),
+    new ButtonBuilder()
+      .setCustomId('reaction_trigger_open')
+      .setLabel('Gatilhos de reação')
+      .setStyle(ButtonStyle.Primary),
     new ButtonBuilder()
       .setCustomId('trigger_refresh')
       .setLabel('Atualizar')

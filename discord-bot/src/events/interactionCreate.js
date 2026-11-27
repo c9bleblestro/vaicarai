@@ -166,6 +166,7 @@ import {
   buildGlobalMessageConfirmPayload,
 } from '../utils/globalMessage.js';
 import { handleTriggerButton, handleTriggerModal } from '../utils/messageTriggers.js';
+import { handleReactionTriggerControl, handleReactionTriggerModal } from '../utils/reactionTriggers.js';
 import {
   buildStaffRatingPanel,
   buildStaffRatingResult,
@@ -757,6 +758,10 @@ export default {
           || interaction.customId.startsWith('survival_control:')
         ) {
           return handleSurvivalInteraction(interaction);
+        }
+
+        if (interaction.customId.startsWith('reaction_trigger_')) {
+          return handleReactionTriggerControl(interaction);
         }
 
         if (interaction.customId === 'trigger_delete_select') {
@@ -1726,6 +1731,10 @@ export default {
         }
         if (customId === 'painel_voltar') {
           return handlePainelVoltar(interaction);
+        }
+
+        if (customId.startsWith('reaction_trigger_')) {
+          return handleReactionTriggerControl(interaction);
         }
 
         if (customId.startsWith('trigger_')) {
@@ -3987,6 +3996,10 @@ export default {
               ? '✅ Obrigado! Sua avaliação foi registrada, mas não foi possível publicá-la no canal de avaliações.'
               : '✅ Obrigado! Sua avaliação foi registrada.',
           });
+        }
+
+        if (interaction.customId === 'reaction_trigger_add_modal') {
+          return handleReactionTriggerModal(interaction);
         }
 
         if (interaction.customId === 'trigger_add_modal') {

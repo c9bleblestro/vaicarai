@@ -829,3 +829,16 @@ model TicketInviteTemplate {
   savedBy String
   updatedAt DateTime @updatedAt
 }
+
+
+// Gatilhos por palavras-chave que adicionam uma reação à mensagem.
+model ReactionTrigger {
+  id String @id @default(cuid())
+  guildId String
+  name String @default("")
+  keywords String
+  emojiId String
+  createdAt DateTime @default(now())
+
+  @@index([guildId])
+}
