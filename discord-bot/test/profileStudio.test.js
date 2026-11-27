@@ -43,7 +43,7 @@ test('animação desligada por padrão, PNG mesmo com banner GIF, efeitos geram 
   // Effects also work without a GIF banner.
   const effect=await generateAnimatedProfileCard({...params,appearance:{theme:'rose',effect:'sparkle'},_resolvedBanner:{gradient:['#221122','#442244']}});
   const frames=framesOf(effect);
-  assert.ok(frames.length>=6);assert.ok(frames.some((frame,index)=>index>0&&!Buffer.from(frame.patch).equals(Buffer.from(frames[0].patch))),'GIF deve ter frames visualmente distintos');
+  assert.ok(frames.length>=15);assert.ok(frames.reduce((sum,f)=>sum+f.delay,0)>=5500);assert.ok(frames.some((frame,index)=>index>0&&!Buffer.from(frame.patch).equals(Buffer.from(frames[0].patch))),'GIF deve ter frames visualmente distintos');
   assert.ok(effect.length<=8*1024*1024);
 });
 test('estúdio oferece opções, valida seleção e salva somente a preferência escolhida',async()=>{
@@ -69,4 +69,18 @@ test('estúdio oferece opções, valida seleção e salva somente a preferência
     await saveProfileAppearance(userId,guildId,'effect','off');
     assert.equal((await prisma.userProfile.findUnique({where:{userId}})).profileEffect,'off');
   }finally{await prisma.userProfile.deleteMany({where:{userId}});await prisma.$disconnect();}
+});
+
+test('layout novo preserva o banner à esquerda e o avatar real à direita',async()=>{
+  const c=createCanvas(120,120),ctx=c.getContext('2d');ctx.fillStyle='#11cc77';ctx.fillRect(0,0,120,120);
+  const banner=await loadImage(c.toBuffer('image/png'));
+  ctx.fillStyle='#3377ff';ctx.fillRect(0,0,120,120);
+  const avatarUrl='data:image/png;base64,'+c.toBuffer('image/png').toString('base64');
+  const img=await generateProfileCard({...params,avatarUrl,_bannerImage:banner,_returnCanvas:true,appearance:{theme:'blush',decor:'none'}});
+  const result=img.getContext('2d');
+  assert.deepEqual([...result.getImageData(280,90,1,1).data],[17,204,119,255]);
+  // The right-hand portrait area cannot be part of the equipped banner.
+  assert.notDeepEqual([...result.getImageData(659,124,1,1).data],[17,204,119,255]);
+  assert.ok(Object.hasOwn(PROFILE_EFFECTS,'dream'));
+  assert.ok(Object.hasOwn(PROFILE_EFFECTS,'aurora'));
 });
