@@ -113,7 +113,15 @@ export class CommunityRadioSession {
     if(!this.panel||this.refreshing)return;
     this.refreshing=true;
     try{await this.panel.edit(buildFmPanel(this));}
-    catch(error){console.warn('[FM] Painel:',error?.code??error?.message??error);}
+    catch(error){
+      if(Number(error?.code)===10008&&!this.stopped){
+        try{
+          this.panel=await this.textChannel.send(buildFmPanel(this));
+          this.config.panelMessageId=this.panel.id;
+          await this.db.communityRadio.update({where:{guildId:this.guild.id},data:{panelMessageId:this.panel.id}});
+        }catch(e){console.warn('[FM] Novo painel:',e?.code??e?.message??e);}
+      }else console.warn('[FM] Painel:',error?.code??error?.message??error);
+    }
     finally{this.refreshing=false;}
   }
   mutateQueue(fn){
@@ -245,11 +253,13 @@ export async function startFm(guild,settings,db=prisma){
   let connection, session;
   try{
     if(radioSessions.has(guild.id)||musicSessions.has(guild.id)||getVoiceConnection(guild.id))throw new Error('Encerre a sessão de áudio atual antes de iniciar a FM.');
+    if(settings.enabled===true){const current=await db.communityRadio.findUnique({where:{guildId:guild.id}});if(!current?.enabled)throw new Error('A rádio está desativada.');settings=current;}
     const voice=await guild.channels.fetch(settings.voiceChannelId);
     const channel=await guild.channels.fetch(settings.textChannelId);
     const me=guild.members.me;
     if(voice?.type!==ChannelType.GuildVoice||!voice.permissionsFor(me)?.has([PermissionFlagsBits.ViewChannel,PermissionFlagsBits.Connect,PermissionFlagsBits.Speak]))throw new Error('Escolha uma call comum e dê ao bot permissões de conectar e falar.');
     if(channel?.type!==ChannelType.GuildText||!channel.permissionsFor(me)?.has([PermissionFlagsBits.ViewChannel,PermissionFlagsBits.SendMessages,PermissionFlagsBits.ReadMessageHistory,PermissionFlagsBits.EmbedLinks]))throw new Error('O canal do painel precisa permitir enviar mensagens, ler histórico e inserir links.');
+    if(getVoiceConnection(guild.id))throw new Error('Outra sessão de voz foi iniciada.');
     connection=joinVoiceChannel({guildId:guild.id,channelId:voice.id,adapterCreator:guild.voiceAdapterCreator,selfDeaf:true,selfMute:false});
     connection.on('error',err=>console.warn('[FM] Voz:',err?.message??err));
     await entersState(connection,VoiceConnectionStatus.Ready,25000);

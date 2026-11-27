@@ -1,10 +1,12 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
+import { EventEmitter } from 'node:events';
+import { spawnSync } from 'node:child_process';
 import prisma,{ensureCommunityRadioSchema} from '../src/database/client.js';
 import { AudioPlayerStatus } from '@discordjs/voice';
 import { Collection, PermissionFlagsBits, PermissionsBitField } from 'discord.js';
 import { scheduledStation, stationKey, rankQueue, toggleQueueVote, checkQueueLimit, safeDedication, canDj, buildFmPanel, CommunityRadioSession } from '../src/utils/communityRadio.js';
-import { validQuery, validTrackUrl, speechText } from '../src/utils/fmAudio.js';
+import { validQuery, validTrackUrl, speechText, openAnnouncement } from '../src/utils/fmAudio.js';
 import { reserveFmVoice, releaseFmVoice, isFmVoiceReserved } from '../src/utils/fmVoiceGuard.js';
 import cmd,{buildQueuePayload,buildRequestModal} from '../src/commands/general/fm.js';
 const item=(id,votes=[],createdAt=1)=>({id,votes,createdAt,requesterId:'u',requesterName:'Alice',recipientName:'Bob',anonymous:true,message:'Olá!',track:{title:'Faixa',uploader:'Artista',duration:'4:20',url:'https://soundcloud.com/artista/faixa',thumbnail:null}});
@@ -67,4 +69,41 @@ test('configuração e fila persistem no PostgreSQL e remoção é transacional 
     await session.remove('a');
     assert.equal((await prisma.communityRadio.findUnique({where:{guildId}})).queue.length,0);
   }finally{await prisma.communityRadio.deleteMany({where:{guildId}});await prisma.$disconnect();}
+});
+
+test('ciclo do player: termina locução, interrompe estação e limpa recursos',async()=>{
+  const session=new CommunityRadioSession({guild:{id:'g'},voiceChannel:{},textChannel:{},connection:{subscribe(){}},config:{queue:[]},panel:null});
+  const player=new EventEmitter();
+  player.state={status:AudioPlayerStatus.Idle};
+  player.play=resource=>{
+    const old=player.state;player.state={status:AudioPlayerStatus.Playing,resource};player.emit('stateChange',old,player.state);
+  };
+  player.stop=()=>{
+    const old=player.state;player.state={status:AudioPlayerStatus.Idle};player.emit('stateChange',old,player.state);
+  };
+  session.player=player;
+  let closes=0;
+  const p=session.playManaged({resource:{},close(){closes++;}},5000);
+  player.stop();
+  assert.equal(await p,'ended');
+  const live=session.playManaged({resource:{},close(){closes++;}});
+  session.interrupt('request');
+  assert.equal(await live,'request');
+  assert.equal(closes,2);
+  assert.equal(player.listenerCount('stateChange'),0);
+});
+
+test('locução local gera pacotes Opus reais sem chave externa', {skip:spawnSync('espeak-ng',['--version']).status!==0||spawnSync('ffmpeg',['-version']).status!==0},async()=>{
+  const previous=process.env.VOICE_TTS_DISABLED;
+  process.env.VOICE_TTS_DISABLED='true';
+  let opened;
+  try{
+    opened=await openAnnouncement('Substancy FM. Boa noite, ouvintes.');
+    let count=0;
+    for await(const packet of opened.resource.playStream){if(packet.length)count++;if(count>=5)break;}
+    assert.ok(count>=5);
+  }finally{
+    opened?.close();
+    if(previous===undefined)delete process.env.VOICE_TTS_DISABLED;else process.env.VOICE_TTS_DISABLED=previous;
+  }
 });

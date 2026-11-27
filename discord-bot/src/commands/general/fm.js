@@ -172,12 +172,13 @@ export default {
       if(sub==='painel'||sub==='entrar')return respond('Painel oficial: '+panelLink(s));
       if(sub==='fila')return message.reply(buildQueuePayload(s,message.member));
       if(sub==='pedir')return respond(await makeRequest(s,message.author,message.member,args.join(' '),null,'',false));
-      if(sub==='dedicar'||sub==='anonima'){
+      if(sub==='anonima')return respond('Use o botão Anônima no painel ou /fm dedicar com anonimo: sim. Evite publicar um pedido anônimo no chat.');
+      if(sub==='dedicar'){
         const parts=args.join(' ').split('|').map(x=>x.trim());
         const id=parts[0]?.match(/^<@!?(\d{17,20})>$/)?.[1]??parts[0];
         const recipient=await memberById(message.guild,id);
         if(!recipient||!parts[1])return respond('Use `s fm dedicar @membro | música | recado` ou `/fm dedicar`.');
-        return respond(await makeRequest(s,message.author,message.member,parts[1],recipient,parts.slice(2).join(' | '),sub==='anonima'));
+        return respond(await makeRequest(s,message.author,message.member,parts[1],recipient,parts.slice(2).join(' | '),false));
       }
       if(['pular','pausar','estacao'].includes(sub))return respond(await djAction(s,message.member,{pular:'skip',pausar:'toggle',estacao:'station'}[sub],args[0]));
       return respond(usage);

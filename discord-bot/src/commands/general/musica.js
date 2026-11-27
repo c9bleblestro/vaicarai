@@ -1,3 +1,4 @@
+import { isFmVoiceReserved } from '../../utils/fmVoiceGuard.js';
 import {
   SlashCommandBuilder,
   EmbedBuilder,
@@ -72,6 +73,7 @@ export default {
   name: 'musica',
 
   async execute(interaction) {
+    if (isFmVoiceReserved(interaction.guildId)) return interaction.reply({ content: 'A Substancy FM está ativa. Use /fm pedir para adicionar uma música à fila.', flags: 64 });
     const consulta = interaction.options.getString('consulta');
 
     let voiceChannel = interaction.options.getChannel('canal');

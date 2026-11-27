@@ -11,7 +11,7 @@ export function validTrackUrl(value){
 export function validQuery(value){
   const q=String(value??'').trim();
   if(!q||q.length>250)return false;
-  if(!/^[a-z][a-z0-9+.-]*:\/\//i.test(q))return true;
+  if(!/^[a-z][a-z0-9+.-]*:\/\//i.test(q))return !/[a-z][a-z0-9+.-]*:\/\//i.test(q);
   try{const u=new URL(q);return u.protocol==='https:'&&!u.username&&!u.password&&!u.port&&['soundcloud.com','www.soundcloud.com','m.soundcloud.com','youtube.com','www.youtube.com','m.youtube.com','youtu.be','open.spotify.com'].includes(u.hostname);}catch{return false;}
 }
 function makeProcess(command,args,stdio){

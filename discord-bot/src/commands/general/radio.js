@@ -1,3 +1,4 @@
+import { isFmVoiceReserved } from '../../utils/fmVoiceGuard.js';
 import {
   SlashCommandBuilder,
   PermissionFlagsBits,
@@ -93,6 +94,7 @@ export default {
     }
 
     if (sub === 'entrar') {
+      if (isFmVoiceReserved(interaction.guildId)) return interaction.reply({ content: 'A Substancy FM está ativa. Use /fm estacao para alterar a programação.', flags: 64 });
       if (notAdmin) return interaction.reply({ embeds: [errEmbed('❌ Apenas administradores podem iniciar o rádio.')], flags: 64 });
 
       const voiceChannel = interaction.options.getChannel('canal');

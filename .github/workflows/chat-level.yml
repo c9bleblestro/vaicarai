@@ -34,6 +34,8 @@ jobs:
           node-version: '22'
       - name: Install dependencies
         run: npm install --no-audit --no-fund
+      - name: Install audio test tools
+        run: sudo apt-get update -qq && sudo apt-get install -y -qq ffmpeg espeak-ng
       - name: Validate Prisma and generate client
         run: npx prisma validate && npx prisma generate
       - name: Check syntax
@@ -55,6 +57,10 @@ jobs:
           node --check src/utils/communityRadio.js
           node --check src/utils/fmAudio.js
           node --check src/commands/general/fm.js
+          node --check src/commands/general/musica.js
+          node --check src/commands/general/radio.js
+          node --check src/utils/musicManager.js
+          node --check src/utils/radioManager.js
           node --check src/commands/general/nivel.js
           node --check src/utils/profileCard.js
           node --check src/commands/general/perfil.js
