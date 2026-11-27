@@ -847,7 +847,7 @@ model ReactionTrigger {
 model CommunityRadio {
   guildId String @id
   voiceChannelId String
-  textChannelId String
+  textChannelId String?
   panelMessageId String?
   station String @default("auto")
   djRoleId String?

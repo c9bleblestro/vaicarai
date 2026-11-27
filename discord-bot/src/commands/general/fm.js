@@ -6,7 +6,7 @@ import {
 } from 'discord.js';
 import prisma from '../../database/client.js';
 import { checkFmRuntime } from '../../utils/fmAudio.js';
-import { fmSessions, startFm, stopFm, rankQueue, STATIONS, canDj } from '../../utils/communityRadio.js';
+import { fmSessions, startFm, stopFm, rankQueue, STATIONS, canDj, resolveStartVoice } from '../../utils/communityRadio.js';
 
 const PRIVATE=MessageFlags.Ephemeral;
 const clip=(v,n=120)=>String(v??'').slice(0,n);
@@ -14,11 +14,14 @@ const safe=(v,n=120)=>clip(escapeMarkdown(clip(v,n)),n);
 const admin=m=>Boolean(m?.permissions?.has(PermissionFlagsBits.ManageGuild));
 const stationChoices=Object.entries(STATIONS).map(([value,name])=>({name,value}));
 const textResult=content=>({content,allowedMentions:{parse:[],repliedUser:false}});
-const usage='**Substancy FM**\nUse `/fm iniciar` para configurar a rádio e publicar o painel.\nPedidos: `/fm pedir`, `/fm dedicar`, `/fm fila` ou os botões do painel.';
+const usage='**Substancy FM**\nUse `/fm iniciar` na sua call. Informe uma música se quiser começar por ela. Use `/fm painel` para publicar o painel.\nPedidos: `/fm pedir`, `/fm dedicar`, `/fm fila` ou os botões do painel.';
 const needsRadio='A Substancy FM não está ativa. Peça à administração para usar /fm iniciar.';
 const inVoice=(member,s)=>member?.voice?.channelId===s.config.voiceChannelId;
 const friendly=e=>clip(e?.message||'Não foi possível concluir a ação.',350);
-function panelLink(s){return 'https://discord.com/channels/'+s.guild.id+'/'+s.config.textChannelId+'/'+s.config.panelMessageId;}
+function panelLink(s){return s.config.textChannelId&&s.config.panelMessageId?'https://discord.com/channels/'+s.guild.id+'/'+s.config.textChannelId+'/'+s.config.panelMessageId:null;}
+function panelNotice(s){return panelLink(s)?'Painel: '+panelLink(s):'Nenhum painel publicado. Use /fm painel no canal desejado.';}
+function startNotice(s){return '✅ Substancy FM conectada em <#'+s.config.voiceChannelId+'>!'+(s.openingItem?'\nPrimeira música: **'+safe(s.openingItem.track.title)+'**'+(s.openingItem.track.sourceFallback?' (versão correspondente no SoundCloud)':''):'\nProgramação automática quando não houver pedidos.')+'\n'+panelNotice(s);}
+function initialRequest(user,member,query){return query?.trim()?{userId:user.id,name:member?.displayName??user.globalName??user.username,query:query.trim()}:null;}
 function selectOption(item){
   return new StringSelectMenuOptionBuilder().setLabel(clip(item.track.title||'Música',100)).setDescription(clip(item.votes.length+' voto(s) • '+item.track.uploader,100)).setValue(item.id);
 }
@@ -42,7 +45,7 @@ async function makeRequest(s,user,member,query,recipient,message,anonymous){
   if(recipient?.user?.bot)throw new Error('Escolha um membro, não um bot.');
   if(recipient&&recipient.id===user.id)throw new Error('Escolha outra pessoa para dedicar a música.');
   const item=await s.request({userId:user.id,name:member?.displayName??user.globalName??user.username,query,recipientName:recipient?.displayName??null,message,anonymous});
-  return '✅ **'+safe(item.track.title)+'** adicionada à fila!'+(item.track.sourceFallback?'\nO link original não liberou o áudio. Encontrei uma versão correspondente no SoundCloud.':'')+(recipient?' A dedicatória aparecerá quando tocar.':'')+'\n'+panelLink(s);
+  return '✅ **'+safe(item.track.title)+'** adicionada à fila!'+(item.track.sourceFallback?'\nO link original não liberou o áudio. Encontrei uma versão correspondente no SoundCloud.':'')+(recipient?' A dedicatória aparecerá quando tocar.':'')+'\n'+panelNotice(s);
 }
 async function memberById(guild,id){if(!/^\d{17,20}$/.test(id??''))return null;return guild.members.fetch(id).catch(()=>null);}
 async function djAction(s,member,action,station){
@@ -107,8 +110,9 @@ async function diagnostic(member){
 }
 const data=new SlashCommandBuilder().setName('fm').setDescription('Substancy FM — rádio comunitária e dedicatórias')
   .addSubcommand(sub=>sub.setName('iniciar').setDescription('Admin: configura e liga a rádio oficial')
-    .addChannelOption(o=>o.setName('voz').setDescription('Call oficial da rádio').addChannelTypes(ChannelType.GuildVoice).setRequired(true))
-    .addChannelOption(o=>o.setName('painel').setDescription('Canal de texto do painel permanente').addChannelTypes(ChannelType.GuildText).setRequired(true))
+    .addStringOption(o=>o.setName('musica').setDescription('Música inicial: nome + artista ou link da faixa').setMaxLength(250))
+    .addChannelOption(o=>o.setName('voz').setDescription('Call da rádio (padrão: sua call atual)').addChannelTypes(ChannelType.GuildVoice))
+    .addChannelOption(o=>o.setName('painel').setDescription('Canal do painel (vazio: não publica)').addChannelTypes(ChannelType.GuildText))
     .addStringOption(o=>o.setName('estacao').setDescription('Programação quando a fila estiver vazia').addChoices(...stationChoices))
     .addRoleOption(o=>o.setName('dj').setDescription('Cargo autorizado a controlar a programação')))
   .addSubcommand(sub=>sub.setName('pedir').setDescription('Adiciona uma música à fila da rádio')
@@ -119,13 +123,29 @@ const data=new SlashCommandBuilder().setName('fm').setDescription('Substancy FM 
     .addStringOption(o=>o.setName('mensagem').setDescription('Recado público que poderá ser lido pelo locutor').setMaxLength(240))
     .addBooleanOption(o=>o.setName('anonimo').setDescription('Esconder seu nome do público')))
   .addSubcommand(sub=>sub.setName('fila').setDescription('Mostra a fila e permite votar'))
-  .addSubcommand(sub=>sub.setName('painel').setDescription('Localiza o painel oficial da rádio'))
+  .addSubcommand(sub=>sub.setName('painel').setDescription('Publica o painel da rádio neste canal de texto'))
   .addSubcommand(sub=>sub.setName('pular').setDescription('DJ: pula a faixa atual'))
   .addSubcommand(sub=>sub.setName('pausar').setDescription('DJ: alterna entre pausa e reprodução'))
   .addSubcommand(sub=>sub.setName('estacao').setDescription('DJ: altera a programação automática')
     .addStringOption(o=>o.setName('modo').setDescription('Estação').setRequired(true).addChoices(...stationChoices)))
   .addSubcommand(sub=>sub.setName('diagnostico').setDescription('Admin: verifica o reprodutor de músicas no servidor'))
   .addSubcommand(sub=>sub.setName('parar').setDescription('Admin: encerra a rádio oficial'));
+export async function parseFmStartPrefix(guild,args,memberVoiceId){
+  let voice=null,panel=null,station='auto';
+  const words=[...args];
+  // Compatibilidade com s fm iniciar #call #chat estação, seguida opcionalmente de música.
+  while(words.length){
+    const match=words[0].match(/^<#(\d{17,20})>$/)||words[0].match(/^(\d{17,20})$/);
+    if(!match)break;
+    const channel=await guild.channels.fetch(match[1]);
+    if(channel?.type===ChannelType.GuildVoice&&!voice)voice=channel.id;
+    else if(channel?.type===ChannelType.GuildText&&!panel)panel=channel.id;
+    else throw new Error('Informe no máximo uma call e um canal de texto.');
+    words.shift();
+  }
+  if(words[0]&&Object.hasOwn(STATIONS,words[0])&&(voice||panel||words.length===1))station=words.shift();
+  return {voiceChannelId:resolveStartVoice(voice,memberVoiceId),textChannelId:panel,station,query:words.join(' ').trim()};
+}
 export default {
   data,name:'fm',aliases:['substancyfm'],
   async execute(i){
@@ -138,8 +158,9 @@ export default {
         if(!admin(i.member))throw new Error('Apenas a administração pode iniciar a rádio.');
         const role=i.options.getRole('dj');
         if(role?.id===i.guildId)throw new Error('Escolha um cargo de DJ diferente de @everyone.');
-        const s=await startFm(i.guild,{voiceChannelId:i.options.getChannel('voz',true).id,textChannelId:i.options.getChannel('painel',true).id,station:i.options.getString('estacao')||'auto',djRoleId:role?.id??null});
-        return i.editReply(textResult('✅ Substancy FM conectada! Painel: '+panelLink(s)));
+        const voiceChannelId=resolveStartVoice(i.options.getChannel('voz')?.id,i.guild.voiceStates.cache.get(i.user.id)?.channelId??i.member?.voice?.channelId);
+        const s=await startFm(i.guild,{voiceChannelId,textChannelId:i.options.getChannel('painel')?.id??null,station:i.options.getString('estacao')||'auto',djRoleId:role?.id??null,initialRequest:initialRequest(i.user,i.member,i.options.getString('musica'))});
+        return i.editReply(textResult(startNotice(s)));
       }
       if(sub==='parar'){
         if(!admin(i.member))throw new Error('Apenas a administração pode parar a rádio.');
@@ -147,7 +168,7 @@ export default {
       }
       const s=fmSessions.get(i.guildId);
       if(!s||s.stopped)throw new Error(needsRadio);
-      if(sub==='painel')return i.editReply(textResult('Painel oficial: '+panelLink(s)));
+      if(sub==='painel'){await s.publishPanel(i.channel);return i.editReply(textResult('✅ '+panelNotice(s)));}
       if(sub==='fila')return i.editReply(buildQueuePayload(s,i.member));
       if(sub==='pedir'||sub==='dedicar'){
         const recipient=sub==='dedicar'?await memberById(i.guild,i.options.getUser('membro',true).id):null;
@@ -165,12 +186,9 @@ export default {
       if(sub==='diagnostico')return respond(await diagnostic(message.member));
       if(sub==='iniciar'){
         if(!admin(message.member))throw new Error('Apenas a administração pode iniciar a rádio.');
-        const ids=args.map(x=>x.match(/^<#(\d{17,20})>$/)?.[1]??x);
-        if(!/^\d{17,20}$/.test(ids[0]??'')||!/^\d{17,20}$/.test(ids[1]??''))return respond('Use `s fm iniciar #call #canal-de-texto` ou `/fm iniciar`.');
-        const station=args[2]||'auto';
-        if(!Object.hasOwn(STATIONS,station))throw new Error('Estação inválida. Use /fm iniciar para escolher.');
-        const s=await startFm(message.guild,{voiceChannelId:ids[0],textChannelId:ids[1],station});
-        return respond('✅ Substancy FM conectada! '+panelLink(s));
+        const options=await parseFmStartPrefix(message.guild,args,message.member?.voice?.channelId);
+        const s=await startFm(message.guild,{...options,initialRequest:initialRequest(message.author,message.member,options.query)});
+        return respond(startNotice(s));
       }
       if(sub==='parar'){
         if(!admin(message.member))throw new Error('Apenas a administração pode parar a rádio.');
@@ -178,7 +196,8 @@ export default {
       }
       const s=fmSessions.get(message.guildId);
       if(!s||s.stopped)return respond(usage);
-      if(sub==='painel'||sub==='entrar')return respond('Painel oficial: '+panelLink(s));
+      if(sub==='painel'){await s.publishPanel(message.channel);return respond('✅ '+panelNotice(s));}
+      if(sub==='entrar')return respond(panelNotice(s));
       if(sub==='fila')return message.reply(buildQueuePayload(s,message.member));
       if(sub==='pedir')return respond(await makeRequest(s,message.author,message.member,args.join(' '),null,'',false));
       if(sub==='anonima')return respond('Use o botão Anônima no painel ou /fm dedicar com anonimo: sim. Evite publicar um pedido anônimo no chat.');
