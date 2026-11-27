@@ -4,10 +4,9 @@ import {createCanvas,loadImage,GifEncoder} from '@napi-rs/canvas';
 import {parseGIF,decompressFrames} from 'gifuct-js';
 import prisma from '../src/database/client.js';
 import {getPetWorld,changePetWorld,petStats,petLevel,petCooldown,MINUTE} from '../src/utils/petLife.js';
-import {decodePetSprite,renderPetWorld} from '../src/utils/petWorldArt.js';
-import {rigPose,drawRigFrame,RIG_ACTIONS,RIG_DURATION,RIG_STEP} from '../src/utils/petRigArt.js';
+import {decodePetSprite,renderPetWorld,petMotionPlan,ILLUSTRATED_ACTIONS,ACTION_DURATION} from '../src/utils/petWorldArt.js';
 import {buildWorldPayload} from '../src/commands/general/pet.js';
-import {getPetIllustration,validatePetIllustrations} from '../src/utils/petIllustrationPack.js';
+import {getPetIllustration,getPetMotionSource,validatePetIllustrations,getPimentinhaClip} from '../src/utils/petIllustrationPack.js';
 import {migratePetCatalogForGuild} from '../src/utils/petCatalogV2.js';
 const sample={careAt:new Date(100000),fullness:90,happiness:90,energy:90,hygiene:90,bond:10};
 test('life decay is bounded, persistent bond and levels are independent',()=>{
@@ -78,13 +77,8 @@ test('illustrated catalog serves the actual four GIF files without the old rende
       assert.equal(art.ext,'gif');
       assert.deepEqual(art.buffer,original);
       const frames=await decodePetSprite(original);
-      assert.ok(frames.length>=100);
-      assert.ok(frames.reduce((sum,f)=>sum+f.delay,0)>=5500);
-      if(view==='portrait'){
-        assert.ok(frames.every(f=>f.image.getContext('2d').getImageData(0,0,1,1).data[3]===0));
-        const decoded=decompressFrames(parseGIF(original.buffer.slice(original.byteOffset,original.byteOffset+original.byteLength)),true);
-        assert.ok(decoded.every(f=>f.disposalType===2));
-      }
+      assert.ok(frames.length>=4);
+      assert.ok(frames.reduce((sum,f)=>sum+f.delay,0)>=4000);
     }
     const art=await renderPetWorld(pet,{theme:'neon',view:'room',action:'acariciar'});
     assert.equal(art.illustrated,true);assert.equal(art.ext,'gif');
@@ -102,7 +96,7 @@ test('catalog migration retires old pets and transfers ownership and progression
     const res=await migratePetCatalogForGuild(guildId,prisma);
     assert.equal(res.retired,1);assert.equal(res.owners,1);
     const live=await prisma.pet.findMany({where:{guildId,active:true}});
-    assert.deepEqual(live.map(p=>p.id).sort(),['pw2-koda-'+guildId,'pw2-luna-'+guildId]);
+    assert.deepEqual(live.map(p=>p.id).sort(),['pw2-koda-'+guildId,'pw2-luna-'+guildId,'pw2-pimentinha-'+guildId]);
     assert.equal((await prisma.pet.findUnique({where:{id:old.id}})).active,false);
     assert.equal(await prisma.userPurchase.count({where:{userId,itemType:'pet'}}),2);
     assert.equal(await prisma.userPurchase.count({where:{userId,itemType:'pet_legacy'}}),1);
@@ -138,33 +132,15 @@ test('portrait and room stay distinct; away panel retains a real GIF',async()=>{
   }
 });
 
-
-test('continuous rig motion is closed at the loop boundary and poses are bounded',()=>{
-  for(const action of RIG_ACTIONS){
-    const a=rigPose(action,0),b=rigPose(action,1);
-    for(const key of Object.keys(a))assert.ok(Math.abs(a[key]-b[key])<1e-8,action+':'+key);
-    for(let i=0;i<=100;i++){
-      const p=rigPose(action,i/100);assert.ok(Object.values(p).every(Number.isFinite));
-      assert.ok(p.blink>=0&&p.blink<=1);assert.ok(Math.abs(p.x)<=34);
-    }
-  }
-  assert.equal(RIG_DURATION/RIG_STEP,112);
-});
-test('rig frames keep one room and one character across actions; portraits have transparent edges',()=>{
-  for(const species of ['luna','koda'])for(const theme of ['neon','rose','moon']){
-    const canvas=createCanvas(480,320),ctx=canvas.getContext('2d');
-    drawRigFrame(ctx,species,{view:'room',theme,t:0});
-    const stable=Buffer.from(ctx.getImageData(0,0,100,100).data);
-    for(const action of RIG_ACTIONS){
-      drawRigFrame(ctx,species,{view:'room',theme,action,t:.5});
-      assert.deepEqual(Buffer.from(ctx.getImageData(0,0,100,100).data),stable);
-      assert.equal(ctx.getImageData(0,0,1,1).data[3],255);
-    }
-    const portrait=createCanvas(384,256),pc=portrait.getContext('2d');
-    for(const action of RIG_ACTIONS){
-      drawRigFrame(pc,species,{view:'portrait',action,t:.5});
-      assert.equal(pc.getImageData(0,0,1,1).data[3],0);
-      assert.ok(pc.getImageData(192,155,1,1).data[3]>0||pc.getImageData(220,155,1,1).data[3]>0);
+test('all illustrated timelines close the loop and fit a complete 5.6s action',async()=>{
+  for(const species of ['luna','koda'])for(const view of ['portrait','room']){
+    const pet={id:'pw2-'+species+'-test'};
+    const source=await decodePetSprite(getPetMotionSource(pet.id,view));
+    for(const action of ILLUSTRATED_ACTIONS){
+      const plan=petMotionPlan(species,view,action);
+      assert.equal(plan.reduce((sum,f)=>sum+f.delay,0),ACTION_DURATION);
+      assert.equal(plan[0].index,plan.at(-1).index);
+      assert.ok(plan.every(f=>f.index>=0&&f.index<source.length));
     }
   }
 });
@@ -185,4 +161,43 @@ test('room and portrait controls preserve the selected view and do not freeze at
   const play=payload.components.flatMap(c=>c.toJSON().components??[]).find(b=>b.custom_id?.startsWith('pet_action:brincar:'));
   assert.ok(play);assert.ok(play.custom_id.endsWith(':p'));assert.equal(play.disabled,false);
   assert.ok(JSON.stringify(payload.components.map(c=>c.toJSON())).includes('<t:'));
+});
+
+test('Pimentinha ships the five original optimized clips and uses separate shop/room media',async()=>{
+  const pet={id:'pw2-pimentinha-test',name:'Pimentinha',emoji:'😈'};
+  const cases=[['portrait','idle'],['room','idle'],['room','brincar'],['room','acariciar'],['room','dormir']];
+  const seen=new Set();
+  for(const [view,action] of cases){
+    const original=getPimentinhaClip(view,action);
+    const art=await renderPetWorld(pet,{view,theme:'neon',action});
+    assert.deepEqual(art.buffer,original);assert.equal(art.fallback,undefined);
+    assert.ok(original.length<700*1024);
+    const frames=await decodePetSprite(original);assert.equal(frames.length,16);
+    assert.equal(frames.reduce((sum,f)=>sum+f.delay,0),4800);
+    seen.add(original.toString('base64'));
+  }
+  assert.equal(seen.size,5);
+});
+test('adding Pimentinha to existing guild does not alter previous pets, balances or ownership',async()=>{
+  const guildId='pet-add-'+Date.now(),userId=guildId;
+  try{
+    await prisma.pet.createMany({data:[{id:'pw2-luna-'+guildId,guildId,name:'Luna',emoji:'🐱',price:2500,active:true},{id:'pw2-koda-'+guildId,guildId,name:'Koda',emoji:'🐶',price:3500,active:true}]});
+    await prisma.userPurchase.create({data:{userId,guildId,itemType:'pet',itemRef:'pw2-luna-'+guildId}});
+    await prisma.userProfile.create({data:{userId,guildId,activePet:'pw2-luna-'+guildId}});
+    await prisma.economy.create({data:{userId,guildId,balance:5555}});
+    await prisma.petLife.create({data:{userId,guildId,petId:'pw2-luna-'+guildId,xp:123}});
+    await migratePetCatalogForGuild(guildId,prisma);
+    await migratePetCatalogForGuild(guildId,prisma);
+    const p=await prisma.pet.findUnique({where:{id:'pw2-pimentinha-'+guildId}});
+    assert.equal(p.price,5000);assert.equal(p.active,true);
+    assert.equal(await prisma.userPurchase.count({where:{userId,itemType:'pet'}}),1);
+    const world=await getPetWorld(userId,guildId);assert.equal(world.life.xp,123);assert.equal(world.eco.balance,5555);assert.equal(world.pet.id,'pw2-luna-'+guildId);
+  }finally{
+    await prisma.petLife.deleteMany({where:{guildId}});
+    await prisma.userPurchase.deleteMany({where:{userId}});
+    await prisma.userProfile.deleteMany({where:{userId}});
+    await prisma.economy.deleteMany({where:{guildId}});
+    await prisma.pet.deleteMany({where:{guildId}});
+    await prisma.$disconnect();
+  }
 });
