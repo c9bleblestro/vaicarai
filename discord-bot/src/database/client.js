@@ -629,4 +629,19 @@ export async function ensureReactionTriggerSchema() {
   await prisma.$executeRaw`CREATE INDEX IF NOT EXISTS "ReactionTrigger_guildId_idx" ON "ReactionTrigger" ("guildId")`;
 }
 
+export async function ensureCommunityRadioSchema() {
+  await prisma.$executeRaw`
+    CREATE TABLE IF NOT EXISTS "CommunityRadio" (
+      "guildId" TEXT PRIMARY KEY,
+      "voiceChannelId" TEXT NOT NULL,
+      "textChannelId" TEXT NOT NULL,
+      "panelMessageId" TEXT,
+      "station" TEXT NOT NULL DEFAULT 'auto',
+      "djRoleId" TEXT,
+      "enabled" BOOLEAN NOT NULL DEFAULT false,
+      "queue" JSONB NOT NULL DEFAULT '[]'::jsonb
+    )
+  `;
+}
+
 export default prisma;

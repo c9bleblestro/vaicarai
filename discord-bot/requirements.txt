@@ -2,3 +2,5 @@
 torch==2.6.0+cpu
 torchaudio==2.6.0+cpu
 chatterbox-tts @ git+https://github.com/resemble-ai/chatterbox.git@5de7a54aa4e5e2baadb0182dde554908b48b85c2
+# Reprodutor de fontes públicas compatíveis da rádio comunitária.
+yt-dlp>=2025.1.1
