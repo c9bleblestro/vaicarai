@@ -18,7 +18,7 @@ if (process.env.REPL_ID && !railwayMarkers.length) {
 
 import { Client, GatewayIntentBits, Partials, Collection } from 'discord.js';
 import { loadCommands } from './utils/loader.js';
-import { ensureCallRankSchema, ensureMarriageSchema, ensureChatLevelSchema, ensureInteractionStreakSchema, ensureTicketInviteTemplateSchema, ensureReactionTriggerSchema, ensureCommunityRadioSchema, ensureProfileStudioSchema, ensurePetLifeSchema } from './database/client.js';
+import { ensureCallRankSchema, ensureMarriageSchema, ensureChatLevelSchema, ensureInteractionStreakSchema, ensureTicketInviteTemplateSchema, ensureReactionTriggerSchema, ensureCommunityRadioSchema, ensureProfileStudioSchema, ensurePetLifeSchema, ensureInstaVoteSchema } from './database/client.js';
 import { migrateIllustratedPetCatalog } from './utils/petCatalogV2.js';
 import { ensureCommandFine } from './utils/commandFine.js';
 import { applyRequestedCoupleStreakAdjustment } from './utils/interactionStreakAdjustment.js';
@@ -84,6 +84,7 @@ process.on('uncaughtException',  err    => console.error('[UNCAUGHT EXCEPTION]',
     await ensureCommunityRadioSchema();
     await ensureProfileStudioSchema();
     await ensurePetLifeSchema();
+    await ensureInstaVoteSchema();
     await migrateIllustratedPetCatalog();
     // Ajuste administrativo pontual; nunca impede a inicialização do bot.
     try { await applyRequestedCoupleStreakAdjustment(); }
