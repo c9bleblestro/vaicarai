@@ -1,4 +1,4 @@
-import { trackPlatform, validQuery, validTrackUrl, readTrackMetadata } from './fmAudio.js';
+import { trackPlatform, validQuery, validTrackUrl, readTrackMetadata, fmSourceError } from './fmAudio.js';
 import { searchSoundCloudCandidates } from './musicManager.js';
 
 const clean=v=>String(v??'').trim();
@@ -78,37 +78,62 @@ async function spotifyInfo(url){
   if(!artist)throw new Error('O Spotify não informou o artista. Pesquise pelo nome da música e do cantor ou envie um link do YouTube/SoundCloud.');
   return {title,artist,artwork:safeArtworkUrl(data.thumbnail_url)};
 }
+async function youtubeInfo(url){
+  const d=await json('https://www.youtube.com/oembed?format=json&url='+encodeURIComponent(url));
+  const title=clean(d.title),artist=clean(d.author_name).replace(/\s+-\s+Topic$/i,'');
+  if(!title||!artist)throw new Error('Não consegui identificar o vídeo.');
+  return {title,artist,artwork:safeArtworkUrl(d.thumbnail_url)};
+}
 function deadline(p,ms){let timer;return Promise.race([p,new Promise((_,reject)=>{timer=setTimeout(()=>reject(new Error('Tempo de busca excedido')),ms);})]).finally(()=>clearTimeout(timer));}
-async function searchPlayable(query,{search,inspect}){
-  let candidates=[];
+async function searchPlayable(query,{search,inspect,onlySoundCloud=false}){
+  let candidates=[],failure=null;
   try{candidates=rankCandidates(query,await deadline(search(query),8000));}catch{}
-  // Usa a faixa que passou pela verificação de correspondência, não o primeiro
-  // resultado aleatório. Verifica disponibilidade e duração antes de enfileirar.
-  for(const candidate of candidates.slice(0,1)){
-    try{
-      const info=await inspect(candidate.url);
-      if(score(query,info)>=0)return info;
-    }catch{}
+  // Mais de uma opção: uma faixa removida não invalida toda a pesquisa.
+  const checked=await Promise.allSettled(candidates.slice(0,3).map(candidate=>inspect(candidate.url)));
+  for(const result of checked){
+    if(result.status==='fulfilled'&&score(query,result.value)>=0&&(!onlySoundCloud||trackPlatform(result.value.url)==='soundcloud'))return result.value;
+    if(result.status==='rejected')failure=result.reason;
   }
-  try{
-    const info=await inspect('ytsearch1:'+query);
-    if(score(query,info)>=0)return info;
-  }catch{}
+  if(!onlySoundCloud){
+    try{
+      const info=await inspect('ytsearch1:'+query);
+      if(score(query,info)>=0)return info;
+    }catch(error){failure=error;}
+  }
+  if(failure?.code==='EXTRACTOR_MISSING')throw failure;
   throw new Error('Não encontrei uma versão disponível que corresponda ao pedido. Tente nome + artista ou o link exato da faixa.');
+}
+function youtubeSearchQuery(meta){
+  const title=clean(meta.title).replace(/\s*[\[(](?:official (?:music )?video|official audio|lyric(?:s| video)?|clipe oficial|audio oficial|visualizer)[\])]\s*/gi,' ').trim();
+  const artist=clean(meta.artist).replace(/VEVO$/i,'').replace(/\s+-\s+Topic$/i,'').trim();
+  return contains(title,artist)?title:(title+' '+artist).trim();
 }
 export async function resolveFmTrack(query,deps={}){
   query=clean(query);
   if(!validQuery(query))throw new Error('Use nome + artista ou link de uma faixa individual do SoundCloud, YouTube ou Spotify.');
   const inspect=deps.inspect??readTrackMetadata,search=deps.search??searchSoundCloudCandidates,catalog=deps.catalog??catalogSearch,spotify=deps.spotify??spotifyInfo;
   const platform=trackPlatform(query);
-  let track,requested;
+  let track,requested,sourceFallback=false;
   if(platform==='spotify'){
     requested=await spotify(query);
     track=await searchPlayable(requested.title+' '+requested.artist,{search,inspect});
   }else if(platform){
-    try{track=await inspect(query);}catch{throw new Error('Essa faixa está indisponível para a rádio. Tente outro link público ou pesquise pelo nome e artista.');}
-    // Links explícitos nunca são convertidos para um resultado de busca.
-    if(trackPlatform(track.url)!==platform)throw new Error('Não consegui confirmar a fonte original dessa faixa.');
+    try{track=await inspect(query);}
+    catch(error){
+      if(error?.code==='EXTRACTOR_MISSING')throw error;
+      if(platform!=='youtube')throw error?.code?error:fmSourceError('SOURCE_UNAVAILABLE');
+      // Se a fonte não liberar o áudio, consultar apenas os metadados públicos
+      // e procurar outra publicação compatível. Não tenta contornar o bloqueio.
+      try{
+        const meta=await (deps.youtube??youtubeInfo)(query);
+        track=await searchPlayable(youtubeSearchQuery(meta),{search,inspect,onlySoundCloud:true});
+        sourceFallback=true;
+      }catch(fallbackError){
+        if(fallbackError?.code==='EXTRACTOR_MISSING')throw fallbackError;
+        throw error?.code?error:fmSourceError('SOURCE_UNAVAILABLE');
+      }
+    }
+    if(!sourceFallback&&trackPlatform(track.url)!==platform)throw new Error('Não consegui confirmar a fonte original dessa faixa.');
   }else{
     track=await searchPlayable(query,{search,inspect});
   }
@@ -121,6 +146,6 @@ export async function resolveFmTrack(query,deps={}){
     uploader:requested?.artist??album?.artistName??track.uploader,
     album:album?.collectionName??track.album??null,
     artwork,thumbnail:safeArtworkUrl(track.thumbnail),
-    platform:trackPlatform(track.url),
+    platform:trackPlatform(track.url),sourceFallback,requestedPlatform:platform,
   };
 }

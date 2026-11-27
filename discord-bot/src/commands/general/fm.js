@@ -5,6 +5,7 @@ import {
   TextInputBuilder, TextInputStyle, escapeMarkdown,
 } from 'discord.js';
 import prisma from '../../database/client.js';
+import { checkFmRuntime } from '../../utils/fmAudio.js';
 import { fmSessions, startFm, stopFm, rankQueue, STATIONS, canDj } from '../../utils/communityRadio.js';
 
 const PRIVATE=MessageFlags.Ephemeral;
@@ -41,7 +42,7 @@ async function makeRequest(s,user,member,query,recipient,message,anonymous){
   if(recipient?.user?.bot)throw new Error('Escolha um membro, não um bot.');
   if(recipient&&recipient.id===user.id)throw new Error('Escolha outra pessoa para dedicar a música.');
   const item=await s.request({userId:user.id,name:member?.displayName??user.globalName??user.username,query,recipientName:recipient?.displayName??null,message,anonymous});
-  return '✅ **'+safe(item.track.title)+'** adicionada à fila!'+(recipient?' A dedicatória aparecerá quando tocar.':'')+'\n'+panelLink(s);
+  return '✅ **'+safe(item.track.title)+'** adicionada à fila!'+(item.track.sourceFallback?'\nO link original não liberou o áudio. Encontrei uma versão correspondente no SoundCloud.':'')+(recipient?' A dedicatória aparecerá quando tocar.':'')+'\n'+panelLink(s);
 }
 async function memberById(guild,id){if(!/^\d{17,20}$/.test(id??''))return null;return guild.members.fetch(id).catch(()=>null);}
 async function djAction(s,member,action,station){
@@ -99,6 +100,11 @@ export async function handleFmInteraction(i){
     }catch(e){return i.editReply(textResult('❌ '+friendly(e)));}
   }
 }
+async function diagnostic(member){
+  if(!admin(member))throw new Error('Apenas a administração pode consultar o diagnóstico.');
+  const result=await checkFmRuntime();
+  return ' **Diagnóstico da Substancy FM**\nExtrator: '+(result.extractor?'✅ '+result.extractor:'❌ indisponível')+'\nFFmpeg: '+(result.ffmpeg?'✅ '+result.ffmpeg:'❌ indisponível')+'\n-# Verifica os executáveis do servidor, não a disponibilidade de cada música.';
+}
 const data=new SlashCommandBuilder().setName('fm').setDescription('Substancy FM — rádio comunitária e dedicatórias')
   .addSubcommand(sub=>sub.setName('iniciar').setDescription('Admin: configura e liga a rádio oficial')
     .addChannelOption(o=>o.setName('voz').setDescription('Call oficial da rádio').addChannelTypes(ChannelType.GuildVoice).setRequired(true))
@@ -118,6 +124,7 @@ const data=new SlashCommandBuilder().setName('fm').setDescription('Substancy FM 
   .addSubcommand(sub=>sub.setName('pausar').setDescription('DJ: alterna entre pausa e reprodução'))
   .addSubcommand(sub=>sub.setName('estacao').setDescription('DJ: altera a programação automática')
     .addStringOption(o=>o.setName('modo').setDescription('Estação').setRequired(true).addChoices(...stationChoices)))
+  .addSubcommand(sub=>sub.setName('diagnostico').setDescription('Admin: verifica o reprodutor de músicas no servidor'))
   .addSubcommand(sub=>sub.setName('parar').setDescription('Admin: encerra a rádio oficial'));
 export default {
   data,name:'fm',aliases:['substancyfm'],
@@ -126,6 +133,7 @@ export default {
     const sub=i.options.getSubcommand();
     await i.deferReply({flags:PRIVATE});
     try{
+      if(sub==='diagnostico')return i.editReply(textResult(await diagnostic(i.member)));
       if(sub==='iniciar'){
         if(!admin(i.member))throw new Error('Apenas a administração pode iniciar a rádio.');
         const role=i.options.getRole('dj');
@@ -154,6 +162,7 @@ export default {
     const sub=(args.shift()||'painel').toLowerCase();
     const respond=t=>message.reply(textResult(t));
     try{
+      if(sub==='diagnostico')return respond(await diagnostic(message.member));
       if(sub==='iniciar'){
         if(!admin(message.member))throw new Error('Apenas a administração pode iniciar a rádio.');
         const ids=args.map(x=>x.match(/^<#(\d{17,20})>$/)?.[1]??x);
