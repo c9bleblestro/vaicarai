@@ -22,7 +22,7 @@ export async function migratePetCatalogForGuild(guildId,db=prisma){
     const purchases=await tx.userPurchase.findMany({where:{itemType:'pet',itemRef:{in:oldIds}}});
     const owners=[...new Set(purchases.map(p=>p.userId))];
     if(owners.length){
-      await tx.userPurchase.createMany({data:owners.flatMap(userId=>catalog.map(p=>({userId,guildId,itemType:'pet',itemRef:p.id}))),skipDuplicates:true});
+      await tx.userPurchase.createMany({data:owners.flatMap(userId=>catalog.filter(p=>!p.id.startsWith('pw2-pimentinha-')).map(p=>({userId,guildId,itemType:'pet',itemRef:p.id}))),skipDuplicates:true});
       // Keep the highest existing progression on Luna. The second new pet is free.
       const prior=await tx.petLife.findMany({where:{guildId,userId:{in:owners},petId:{in:oldIds}},orderBy:[{xp:'desc'},{bond:'desc'}]});
       const best=new Map();for(const state of prior)if(!best.has(state.userId))best.set(state.userId,state);
