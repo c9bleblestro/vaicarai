@@ -858,3 +858,27 @@ model CommunityRadio {
   enabled Boolean @default(false)
   queue Json @default("[]")
 }
+
+
+// A separate record for each owned companion. Existing pets and wallet are unchanged.
+model PetLife {
+  userId        String
+  guildId       String
+  petId         String
+  xp            Int      @default(0)
+  fullness      Int      @default(90)
+  happiness     Int      @default(90)
+  energy        Int      @default(90)
+  hygiene       Int      @default(90)
+  bond          Int      @default(0)
+  careAt        DateTime @default(now())
+  lastBath      DateTime?
+  lastNap       DateTime?
+  adventureUntil DateTime?
+  room          String   @default("neon")
+  ownedRooms    String   @default("neon")
+  revision      Int      @default(0)
+
+  @@id([userId, guildId, petId])
+  @@index([guildId, xp])
+}
