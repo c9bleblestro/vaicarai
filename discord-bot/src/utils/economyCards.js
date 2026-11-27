@@ -1623,56 +1623,126 @@ function drawRankingTemplateMember(ctx, x, y, w, entry, avatarImg) {
   ctx.fillText(truncateText(ctx, entry.username || 'Usuário', nameW), nameX, centerY + 10);
 }
 
-// ─── Ranking card using the supplied artwork as the fixed design ──────────────
+// ─── Chrome Y2K ranking — artwork and live data are separate layers ─────────
+function rankMetal(ctx,x,y,w,h,stops){
+  const g=ctx.createLinearGradient(x,y,x+w*.12,y+h);
+  for(const [at,c] of stops)g.addColorStop(at,c);
+  return g;
+}
+function rankFlare(ctx,x,y,r,opacity=.85){
+  ctx.save();ctx.globalAlpha=opacity;
+  const g=ctx.createRadialGradient(x,y,0,x,y,r);
+  g.addColorStop(0,'#ffffff');g.addColorStop(.13,'#ffffffdc');g.addColorStop(.37,'#c5d3ff38');g.addColorStop(1,'#aebfff00');
+  ctx.fillStyle=g;ctx.fillRect(x-r,y-r,r*2,r*2);
+  ctx.fillStyle='#fff';ctx.beginPath();ctx.moveTo(x,y-r);ctx.quadraticCurveTo(x+2,y-3,x+r*.72,y);ctx.quadraticCurveTo(x+2,y+3,x,y+r);ctx.quadraticCurveTo(x-2,y+3,x-r*.72,y);ctx.quadraticCurveTo(x-2,y-3,x,y-r);ctx.fill();
+  ctx.restore();
+}
+function rankCrown(ctx,x,y,w){
+  ctx.save();ctx.translate(x,y);ctx.scale(w/30,w/30);
+  ctx.strokeStyle='#30343e';ctx.fillStyle='#30343e';ctx.lineWidth=2;ctx.lineJoin='round';
+  ctx.beginPath();ctx.moveTo(-13,-8);ctx.lineTo(-6,0);ctx.lineTo(0,-11);ctx.lineTo(6,0);ctx.lineTo(13,-8);ctx.lineTo(10,7);ctx.lineTo(-10,7);ctx.closePath();ctx.stroke();
+  ctx.beginPath();ctx.moveTo(-11,10);ctx.lineTo(11,10);ctx.stroke();
+  for(const [a,b] of [[-13,-8],[0,-11],[13,-8]]){ctx.beginPath();ctx.arc(a,b,1.5,0,Math.PI*2);ctx.fill();}
+  ctx.restore();
+}
+function rankDiamond(ctx,cx,cy,r,position){
+  ctx.save();ctx.translate(cx,cy);
+  const diamond=(sx,sy,fill,stroke,width=1)=>{
+    ctx.beginPath();ctx.moveTo(0,-sy);ctx.quadraticCurveTo(sx*.32,-sy*.34,sx,0);ctx.quadraticCurveTo(sx*.32,sy*.34,0,sy);ctx.quadraticCurveTo(-sx*.32,sy*.34,-sx,0);ctx.quadraticCurveTo(-sx*.32,-sy*.34,0,-sy);ctx.closePath();ctx.fillStyle=fill;ctx.fill();ctx.strokeStyle=stroke;ctx.lineWidth=width;ctx.stroke();
+  };
+  const outer=rankMetal(ctx,-r,-r,r*2,r*2,[[0,'#fff'],[.18,'#8c95aa'],[.39,'#f8faff'],[.51,'#3d4352'],[.74,'#cdd3df'],[1,'#f8faff']]);
+  ctx.shadowColor='#edf4ff66';ctx.shadowBlur=10;diamond(r+8,r+8,outer,'#ffffff',1.5);ctx.shadowBlur=0;
+  // Four metallic facets surround a raised, circular silver medal.
+  diamond(r+3,r+3,outer,'#687080',1.5);
+  diamond(r-6,r-4,rankMetal(ctx,-r,-r,r*2,r*2,[[0,'#8c92a3'],[.31,'#f8fbff'],[.55,'#8a91a0'],[1,'#e8ecf2']]),'#f8faff',1);
+  const rr=r*.70;
+  const g=ctx.createLinearGradient(0,-rr,0,rr);g.addColorStop(0,'#f5f6fb');g.addColorStop(.44,'#d5d9e1');g.addColorStop(.50,'#aab0bc');g.addColorStop(1,'#f7f8fc');
+  ctx.beginPath();ctx.arc(0,0,rr+3,0,Math.PI*2);ctx.fillStyle='#515866';ctx.fill();
+  ctx.beginPath();ctx.arc(0,0,rr,0,Math.PI*2);ctx.fillStyle=g;ctx.fill();ctx.strokeStyle='#fff';ctx.lineWidth=1.5;ctx.stroke();
+  ctx.font='bold 43px '+FONT;ctx.textAlign='center';ctx.textBaseline='middle';ctx.fillStyle='#141820';ctx.fillText(String(position),0,2);
+  ctx.restore();
+}
+function rankChromeRow(ctx,x,y,w,h,entry,position,avatar,amount){
+  const r=23,cy=y+h/2;
+  const outer=rankMetal(ctx,x,y,w,h,[[0,'#f9fbff'],[.11,'#747b8b'],[.29,'#e5e9f4'],[.48,'#353c4a'],[.63,'#c7cedd'],[.83,'#fafcff'],[1,'#555d6b']]);
+  ctx.save();ctx.shadowColor='#d9e4ff48';ctx.shadowBlur=12;roundRect(ctx,x,y,w,h,r);ctx.fillStyle=outer;ctx.fill();ctx.restore();
+  roundRect(ctx,x+2,y+2,w-4,h-4,r-2);ctx.strokeStyle='#f8faff';ctx.lineWidth=1.25;ctx.stroke();
+  roundRect(ctx,x+5,y+5,w-10,h-10,r-5);ctx.fillStyle='#252b35';ctx.fill();
+  const glass=rankMetal(ctx,x,y,w,h,[[0,'#eef1f8'],[.15,'#c4c9d5'],[.31,'#a0a9bd'],[.47,'#e9edf6'],[.49,'#f6f7fa'],[.70,'#c3c9d6'],[.90,'#dfe4ee'],[1,'#f8faff']]);
+  roundRect(ctx,x+8,y+8,w-16,h-16,r-8);ctx.fillStyle=glass;ctx.fill();
+  ctx.save();roundRect(ctx,x+8,y+8,w-16,h-16,r-8);ctx.clip();
+  // Subtle diagonal brushed chrome bands; contrast stays strong behind live text.
+  for(const [a,alpha,width] of [[.25,.11,65],[.50,.12,95],[.79,.17,64]]){
+    const bx=x+w*a;ctx.fillStyle='rgba(255,255,255,'+alpha+')';ctx.beginPath();ctx.moveTo(bx,y);ctx.lineTo(bx+width,y);ctx.lineTo(bx+width-125,y+h);ctx.lineTo(bx-125,y+h);ctx.closePath();ctx.fill();
+  }
+  const shade=ctx.createLinearGradient(x,y,x,y+h);shade.addColorStop(0,'#ffffff44');shade.addColorStop(.25,'#ffffff00');shade.addColorStop(.85,'#ffffff00');shade.addColorStop(1,'#141a2c20');
+  ctx.fillStyle=shade;ctx.fillRect(x,y,w,h);ctx.restore();
+  roundRect(ctx,x+9,y+9,w-18,h-18,r-9);ctx.strokeStyle='#ffffffb0';ctx.lineWidth=1;ctx.stroke();
+  rankDiamond(ctx,x+30,cy,42,position);
+  const avx=x+138,avR=36;
+  if(entry){
+    ctx.save();ctx.shadowColor='#151b2b88';ctx.shadowBlur=7;ctx.beginPath();ctx.arc(avx,cy,avR+3,0,Math.PI*2);ctx.fillStyle='#202533';ctx.fill();ctx.restore();
+    ctx.save();ctx.beginPath();ctx.arc(avx,cy,avR,0,Math.PI*2);ctx.clip();
+    if(avatar){
+      const scale=Math.max(avR*2/avatar.width,avR*2/avatar.height);
+      ctx.drawImage(avatar,avx-avatar.width*scale/2,cy-avatar.height*scale/2,avatar.width*scale,avatar.height*scale);
+    }else{
+      // Same fallback path as other cards, never reuse the preview's portraits.
+      drawAvatarFallback(ctx,avx-avR,cy-avR,avR*2,entry.username);
+    }
+    ctx.restore();
+    ctx.strokeStyle='#f4f6fb';ctx.lineWidth=2;ctx.beginPath();ctx.arc(avx,cy,avR+1,0,Math.PI*2);ctx.stroke();
+    const nameX=x+196,amountX=x+w-25,crownX=x+w-143,amountW=105;
+    ctx.textBaseline='alphabetic';ctx.textAlign='left';ctx.fillStyle='#151922';ctx.font='bold 28px '+FONT;
+    ctx.fillText(truncateText(ctx,String(entry.username||'Usuário'),crownX-nameX-25),nameX,cy+10);
+    rankCrown(ctx,crownX,cy,27);
+    ctx.textAlign='right';ctx.fillStyle='#151922';const value=fmtCompactTop(amount);
+    fitCardText(ctx,value,amountW,32,'700');ctx.fillText(value,amountX,cy+2);
+    ctx.font='15px '+FONT;ctx.fillStyle='#303540';ctx.fillText('Coins',amountX,cy+23);
+  }else{
+    ctx.textAlign='left';ctx.textBaseline='alphabetic';ctx.font='22px '+FONT;ctx.fillStyle='#626976';ctx.fillText('Posição disponível',x+196,cy+8);
+    ctx.textAlign='right';ctx.fillText('—',x+w-25,cy+8);
+  }
+  ctx.textAlign='left';ctx.textBaseline='alphabetic';
+  rankFlare(ctx,x+w*.62,y+3,13,.62);rankFlare(ctx,x+w*.84,y+h-3,10,.45);
+}
+function rankFallbackHeader(ctx){
+  const title=(str,x)=>{
+    ctx.save();ctx.font='italic bold 104px serif';ctx.textAlign='center';ctx.textBaseline='alphabetic';
+    ctx.strokeStyle='#232833';ctx.lineWidth=6;ctx.strokeText(str,x,195);
+    ctx.fillStyle=rankMetal(ctx,x-250,80,500,120,[[0,'#fff'],[.25,'#b6bdcc'],[.43,'#fafcff'],[.51,'#676f82'],[.65,'#dfe4f1'],[1,'#ffffff']]);ctx.fillText(str,x,195);
+    ctx.strokeStyle='#eff3ff';ctx.lineWidth=1;ctx.strokeText(str,x,195);ctx.restore();
+  };
+  title('Top Elite',424);title('Top Coins',1113);
+  ctx.font='15px '+FONT;ctx.fillStyle='#e5e8ef';ctx.textAlign='center';ctx.fillText('THE REAL ONES STAY ON TOP  ///',424,248);ctx.fillText('MORE COINS   MORE OPTIONS  ///',1113,248);
+  ctx.textAlign='left';ctx.fillText('E C O N O M Y   R A N K',87,40);
+}
 export async function generateTopCard({ eliteEntries = [], coinEntries = [] } = {}) {
-  const W = 1536;
-  const H = 1024;
-  const canvas = createCanvas(W, H);
-  const ctx = canvas.getContext('2d');
-  const template = await loadCardTemplate(_rankingTemplatePath);
-
-  if (template) {
-    ctx.drawImage(template, 0, 0, W, H);
-  } else {
-    ctx.fillStyle = '#080A0D';
-    ctx.fillRect(0, 0, W, H);
+  const W=1536,H=1024,canvas=createCanvas(W,H),ctx=canvas.getContext('2d');
+  const template=await loadCardTemplate(_rankingTemplatePath);
+  // Start from a clean silk/obsidian surface. The original template may contain
+  // sample users, so only immutable header/footer/outer-edge artwork is copied.
+  ctx.fillStyle=rankMetal(ctx,0,0,W,H,[[0,'#0a0c11'],[.32,'#171a22'],[.58,'#08090c'],[.82,'#191d26'],[1,'#08090c']]);ctx.fillRect(0,0,W,H);
+  for(let k=0;k<6;k++){
+    const x=110+k*265,y=350+(k%3)*160;
+    const halo=ctx.createRadialGradient(x,y,0,x,y,380);halo.addColorStop(0,'#a5b5d91b');halo.addColorStop(1,'#a5b5d900');ctx.fillStyle=halo;ctx.fillRect(0,0,W,H);
   }
-
-  const elite = eliteEntries.slice(0, 6);
-  const coins = coinEntries.slice(0, 6);
-  const rowY = [302, 408, 514, 620, 726, 832];
-  const leftX = 112;
-  const rightX = 799;
-  const leftW = 638;
-  const rightW = 650;
-  const entries = [...elite, ...coins];
-  const avatars = await Promise.all(
-    entries.map(entry => entry?.avatarUrl ? loadAvatarImg(entry.avatarUrl) : Promise.resolve(null)),
-  );
-  const avatarFor = offset => avatars[offset] ?? null;
-
-  for (let index = 0; index < 6; index += 1) {
-    const eliteEntry = elite[index];
-    drawRankingTemplateMember(ctx, leftX, rowY[index], leftW, eliteEntry, avatarFor(index));
-    drawRankingTemplateValue(
-      ctx,
-      leftX,
-      rowY[index],
-      leftW,
-      eliteEntry ? eliteEntry.eliteTotal ?? eliteEntry.total ?? 0 : null,
-    );
-
-    const coinEntry = coins[index];
-    drawRankingTemplateMember(ctx, rightX, rowY[index], rightW, coinEntry, avatarFor(elite.length + index));
-    drawRankingTemplateValue(
-      ctx,
-      rightX,
-      rowY[index],
-      rightW,
-      coinEntry ? coinEntry.coins ?? coinEntry.total ?? 0 : null,
-    );
+  if(template){
+    // Strict cropping keeps the chrome title, CD, chains and footer ornament,
+    // never any example names, ranks, balances or avatars from the old image.
+    const slices=[[0,0,W,282],[0,930,W,94],[0,282,76,648],[1464,282,72,648]];
+    for(const [x,y,w,h] of slices)ctx.drawImage(template,x*template.width/W,y*template.height/H,w*template.width/W,h*template.height/H,x,y,w,h);
+  }else rankFallbackHeader(ctx);
+  // Add matching light glints to the chrome artwork without obscuring titles.
+  rankFlare(ctx,593,80,25,.60);rankFlare(ctx,1174,107,24,.55);rankFlare(ctx,768,169,31,.85);
+  const elite=eliteEntries.slice(0,6),coins=coinEntries.slice(0,6);
+  const all=[...elite,...coins];
+  const avatars=await Promise.all(all.map(e=>e?.avatarUrl?loadAvatarImg(e.avatarUrl,256):Promise.resolve(null)));
+  for(let i=0;i<6;i++){
+    const y=299+i*105;
+    rankChromeRow(ctx,130,y,620,94,elite[i],i+1,avatars[i]??null,elite[i]?.eliteTotal??elite[i]?.total??0);
+    rankChromeRow(ctx,817,y,634,94,coins[i],i+1,avatars[elite.length+i]??null,coins[i]?.coins??coins[i]?.total??0);
   }
-
   return canvas.toBuffer('image/png');
 }
 

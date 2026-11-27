@@ -3,7 +3,7 @@ import assert from 'node:assert/strict';
 import {loadImage} from '@napi-rs/canvas';
 import {parseGIF,decompressFrames} from 'gifuct-js';
 import {rewardStatus,activeStreak,makeWorkChallenge,DAY,workProgressValue,cosmeticCandidates} from '../src/utils/economyProgress.js';
-import {generateEconomyRewardArt,generateBalanceCard} from '../src/utils/economyCards.js';
+import {generateEconomyRewardArt,generateBalanceCard,generateTopCard} from '../src/utils/economyCards.js';
 import {claimRewardAtomic} from '../src/commands/economia/eco.js';
 import prisma from '../src/database/client.js';
 test('wallet status shares precise cooldowns and streak expiration',()=>{
@@ -45,4 +45,18 @@ test('exclusive cosmetics are deterministic at milestones and loot chances are b
   assert.deepEqual(cosmeticCandidates('weekly',0,()=>.1),[]);
   assert.deepEqual(cosmeticCandidates('monthly',0,()=>.24),['eco_gold']);
   assert.deepEqual(cosmeticCandidates('monthly',0,()=>.25),[]);
+});
+
+test('chrome rank keeps both live columns, supports empty positions and reflects changed data',async()=>{
+  const a={username:'Nome atual',avatarUrl:null,eliteTotal:1650000,coins:27000};
+  const b={username:'Outro membro',avatarUrl:null,eliteTotal:42000,coins:3000};
+  const first=await generateTopCard({eliteEntries:[a,b],coinEntries:[b,a]});
+  const empty=await generateTopCard();
+  const changed=await generateTopCard({eliteEntries:[{...a,eliteTotal:2000000},b],coinEntries:[b,a]});
+  const image=await loadImage(first);
+  assert.equal(image.width,1536);assert.equal(image.height,1024);
+  assert.notDeepEqual(first,empty);
+  assert.notDeepEqual(first,changed);
+  const renamed=await generateTopCard({eliteEntries:[{...a,username:'Nome atualizado'},b],coinEntries:[b,a]});
+  assert.notDeepEqual(first,renamed);
 });
