@@ -1,6 +1,8 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import {loadImage} from '@napi-rs/canvas';
+import {parseGIF,decompressFrames} from 'gifuct-js';
+import {makeInstaHeaderGif} from '../src/utils/instaHeaderArt.js';
 import {INSTA_EMOJI_ASSETS} from '../src/utils/instaEmojiAssets.js';
 import {buildInstaPost,updateInstaCounts,toggleInstaVote,getInstaVotes,nextVote} from '../src/utils/instaFeed.js';
 import prisma from '../src/database/client.js';
@@ -17,4 +19,14 @@ test('exclusive persisted votes toggle and switch',async()=>{
  const postId='insta-test-'+Date.now();
  try{assert.equal(nextVote(1,1),null);await toggleInstaVote(postId,'one',1);await toggleInstaVote(postId,'two',-1);await toggleInstaVote(postId,'one',-1);assert.equal((await getInstaVotes(postId)).no.length,2);await toggleInstaVote(postId,'one',-1);assert.deepEqual((await getInstaVotes(postId)).no,['two']);}
  finally{await prisma.instaVote.deleteMany({where:{postId}});await prisma.$disconnect();}
+});
+
+test('header is a looping animated transparent GIF under the Discord emoji limit',async()=>{
+ const gif=await makeInstaHeaderGif();
+ assert.ok(gif.length<=256*1024);
+ const parsed=parseGIF(gif.buffer.slice(gif.byteOffset,gif.byteOffset+gif.byteLength)),frames=decompressFrames(parsed,true);
+ assert.equal(frames.length,32);
+ assert.equal(frames.reduce((sum,f)=>sum+f.delay,0),1600);
+ assert.ok(frames.every(f=>f.disposalType===2&&f.transparentIndex!==undefined));
+ assert.ok(frames.some((f,i)=>i>0&&!Buffer.from(f.patch).equals(Buffer.from(frames[0].patch))));
 });
