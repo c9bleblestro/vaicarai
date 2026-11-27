@@ -12,7 +12,7 @@ import {
 } from 'discord.js';
 import { fileURLToPath } from 'node:url';
 import { randomBytes } from 'node:crypto';
-import { REWARD_PERIODS, activeStreak, dailyMilestones, makeWorkChallenge, timeLeft } from '../../utils/economyProgress.js';
+import { REWARD_PERIODS, activeStreak, dailyMilestones, makeWorkChallenge, timeLeft, cosmeticCandidates, ECONOMY_COSMETICS } from '../../utils/economyProgress.js';
 import prisma from '../../database/client.js';
 import { Prisma } from '@prisma/client';
 import { getEmoji } from '../../utils/emojiManager.js';
@@ -247,7 +247,12 @@ export async function claimRewardAtomic({userId,guildId,kind,canBypassCooldown=f
     const amount=Math.floor(base*(1+bonus));
     const result=await tx.economy.updateMany({where:{userId,guildId,[p.field]:eco[p.field]},data:{balance:{increment:amount},[p.field]:new Date(now),...(kind==='daily'?{dailyStreak:streak}:{})}});
     if(result.count!==1)return {ok:false,remaining:p.cooldown,streak:activeStreak(eco,now),next:now+p.cooldown};
-    return {ok:true,amount,base,streak,bonus,next:now+p.cooldown};
+    const unlocked=[];
+    if(diff>=p.cooldown){for(const key of cosmeticCandidates(kind,streak)){
+      const grant=await tx.userPurchase.createMany({data:[{userId,guildId,itemType:'economy_cosmetic',itemRef:key}],skipDuplicates:true});
+      if(grant.count)unlocked.push(ECONOMY_COSMETICS[key]);
+    }}
+    return {ok:true,amount,base,streak,bonus,unlocked,next:now+p.cooldown};
   });
 }
 async function claimPeriodicReward({userId,guildId,member,reply,field,amountFactory}){
@@ -257,7 +262,7 @@ async function claimPeriodicReward({userId,guildId,member,reply,field,amountFact
   const next='<t:'+Math.floor(result.next/1000)+':R>';
   const milestones=kind==='daily'?dailyMilestones(result.streak).filter(m=>m.achieved).map(m=>m.day+' dias').join(', '):'';
   if(!result.ok)return reply(rewardPayload(kind,'## '+p.label+' — já resgatado\nPróximo resgate '+next+'.',{status:timeLeft(result.remaining),streak:result.streak,bonus:Math.min(result.streak,30)*2,detail:'Baú indisponível',footer:'Volte quando o tempo acabar.'}));
-  const title='## '+p.label+' resgatado!\n'+COIN()+' **+'+result.amount.toLocaleString('pt-BR')+' coins**\n'+(kind==='daily'?'Sequência: **'+result.streak+' dias** • bônus: **'+Math.round(result.bonus*100)+'%**\n'+(milestones?'Marcos da sequência: '+milestones+'\n':''):'')+'Próximo resgate '+next+'.';
+  const title='## '+p.label+' resgatado!\n'+COIN()+' **+'+result.amount.toLocaleString('pt-BR')+' coins**\n'+(kind==='daily'?'Sequência: **'+result.streak+' dias** • bônus: **'+Math.round(result.bonus*100)+'%**\n'+(milestones?'Marcos da sequência: '+milestones+'\n':''):'')+(result.unlocked?.length?'Nova decoração: **'+result.unlocked.join(', ')+'**. Equipe no Estúdio de perfil.\n':'')+'Próximo resgate '+next+'.';
   return reply(rewardPayload(kind,title,{amount:result.amount,streak:result.streak,bonus:Math.round(result.bonus*100),detail:'Recompensa creditada',footer:'Próximo resgate em '+timeLeft(p.cooldown)},[],true));
 }
 
