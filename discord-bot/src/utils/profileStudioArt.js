@@ -116,6 +116,8 @@ export async function drawStudioProfile(p,h){
   const banner=p._bannerImage?null:p._resolvedBanner??await h.resolveBanner(p.activeBanner,p.guildId,{includeImageData:true});
   let bannerImage=p._bannerImage;
   if(!bannerImage&&banner)try{bannerImage=banner.imageBuffer?await loadImage(Buffer.from(banner.imageBuffer)):await h.loadUrl(banner.imageUrl);}catch{}
+  const background=p._returnLayers?createCanvas(W,H):null;
+  if(background)background.getContext('2d').drawImage(canvas,0,0);
   ctx.save();h.roundRect(ctx,bx,by,bw,bh,20);ctx.clip();
   if(bannerImage)cover(ctx,bannerImage,bx,by,bw,bh);
   else{
@@ -128,7 +130,8 @@ export async function drawStudioProfile(p,h){
     if(a.decor==='cat'){cat(ctx,215,103,36,t.accent,t.light);cat(ctx,290,104,34,t.accent,t.light);ctx.fillStyle=t.accent;heart(ctx,252,61,10);}
     if(a.decor==='bow'){bow(ctx,100,90,31,t.accent,t.light);bow(ctx,465,90,31,t.accent,t.light);}
   }
-  ctx.restore();h.roundRect(ctx,bx,by,bw,bh,20);ctx.strokeStyle=t.accent;ctx.lineWidth=1.5;ctx.stroke();
+  ctx.restore();if(background)ctx.clearRect(0,0,W,H);
+  h.roundRect(ctx,bx,by,bw,bh,20);ctx.strokeStyle=t.accent;ctx.lineWidth=1.5;ctx.stroke();
   const [cx,cy,r]=L.avatar;
   glow(ctx,cx,cy,115,t.accent,.27);
   const ring=ctx.createLinearGradient(cx-r,cy-r,cx+r,cy+r);ring.addColorStop(0,t.light);ring.addColorStop(.48,color(p.ringBorderColor,t.accent));ring.addColorStop(1,t.light);
@@ -180,6 +183,7 @@ export async function drawStudioProfile(p,h){
   frame(484,514,292,65,19);fit(ctx,a.signature?'Assinatura':'SUBSTANCY',502,536,250,14,panelInk,false);
   fit(ctx,a.signature||'Seu perfil, seu estilo.',502,561,254,22,panelInk);
   decorations(ctx,a.decor,t);
+  if(background)return {background,foreground:canvas,bannerRect:[bx,by,bw,bh,20]};
   return p._returnCanvas?canvas:canvas.toBuffer('image/png');
 }
 export function drawProfileEffect(ctx,appearance,phase,base){
@@ -200,7 +204,7 @@ export function drawProfileEffect(ctx,appearance,phase,base){
       // Repaint only the icon disk with its actual source pixels, then add a small animated highlight.
       // All text and equipped assets remain untouched.
       if(base&&(spark||dream)){
-        const pulse=1+.055*Math.sin(angle),size=52*pulse;
+        const pulse=1+.025*Math.sin(angle),size=52*pulse;
         ctx.save();ctx.beginPath();ctx.arc(icx,icy,28,0,tau);ctx.clip();
         ctx.drawImage(base,x+11,y+7,52,52,icx-size/2,icy-size/2,size,size);ctx.restore();
       }
