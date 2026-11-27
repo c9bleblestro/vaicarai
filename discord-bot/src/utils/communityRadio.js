@@ -145,7 +145,7 @@ export class CommunityRadioSession {
     if(this.requestTimes.size>1000)for(const [id,t] of this.requestTimes)if(Date.now()-t>60000)this.requestTimes.delete(id);
     try{
       let info;
-      try{info=await timeout(resolveFmTrack(query.trim()),48000);}catch(error){throw new Error(error?.message||'Não encontrei uma faixa disponível. Tente outro nome ou link.');}
+      try{info=await timeout(resolveFmTrack(query.trim()),65000);}catch(error){throw new Error(error?.message||'Não encontrei uma faixa disponível. Tente outro nome ou link.');}
       if(!validTrackUrl(info.url))throw new Error('A busca não retornou uma fonte de áudio compatível.');
       if(durationSeconds(info.duration)>900)throw new Error('Escolha uma faixa de até 15 minutos.');
       const item={id:randomUUID(),requesterId:userId,requesterName:clip(name,80),recipientName:recipientName?clip(recipientName,80):null,

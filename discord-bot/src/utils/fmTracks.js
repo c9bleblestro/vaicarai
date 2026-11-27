@@ -36,7 +36,7 @@ export function matchCatalog(results,track){
   if(!title||!artist)return null;
   return results.find(r=>{
     const t=normalize(r.trackName),a=normalize(r.artistName);
-    if(!t||!a||!versionMatches(title,r.trackName))return false;
+    if(!t||!a||!versionMatches(title,r.trackName)||!versionMatches(t,track.title))return false;
     // A capa só entra se faixa E artista forem compatíveis com a fonte tocada.
     const titleOk=title===t||(contains(title,t)&&meaningful(track.title).every(w=>tokens(t+' '+a).includes(w)||['feat','ft','ft.','ft','official','audio','video'].includes(w)));
     const artistOk=artist===a||contains(artist,a)||(contains(title,a)&&contains(title,t));
@@ -58,7 +58,8 @@ async function spotifyInfo(url){
   // A API oEmbed nem sempre fornece o artista. Se não fornecer, a página pública
   // de faixa pode fornecer a identificação no título de compartilhamento.
   let title=clean(data.title),artist=clean(data.author_name);
-  if(!artist){
+  if(!artist||normalize(artist)==='spotify'){
+    artist='';
     try{
       const page=await fetch(url,{signal:AbortSignal.timeout(6500),redirect:'error'});
       if(page.ok){
@@ -77,12 +78,13 @@ async function spotifyInfo(url){
   if(!artist)throw new Error('O Spotify não informou o artista. Pesquise pelo nome da música e do cantor ou envie um link do YouTube/SoundCloud.');
   return {title,artist,artwork:safeArtworkUrl(data.thumbnail_url)};
 }
+function deadline(p,ms){let timer;return Promise.race([p,new Promise((_,reject)=>{timer=setTimeout(()=>reject(new Error('Tempo de busca excedido')),ms);})]).finally(()=>clearTimeout(timer));}
 async function searchPlayable(query,{search,inspect}){
   let candidates=[];
-  try{candidates=rankCandidates(query,await search(query));}catch{}
+  try{candidates=rankCandidates(query,await deadline(search(query),8000));}catch{}
   // Usa a faixa que passou pela verificação de correspondência, não o primeiro
   // resultado aleatório. Verifica disponibilidade e duração antes de enfileirar.
-  for(const candidate of candidates.slice(0,2)){
+  for(const candidate of candidates.slice(0,1)){
     try{
       const info=await inspect(candidate.url);
       if(score(query,info)>=0)return info;
@@ -112,7 +114,7 @@ export async function resolveFmTrack(query,deps={}){
   }
   if(!validTrackUrl(track.url))throw new Error('Fonte de áudio incompatível.');
   let album=null;
-  try{album=matchCatalog(await catalog((requested?.title??track.title)+' '+(requested?.artist??track.uploader)),{title:requested?.title??track.title,uploader:requested?.artist??track.uploader});}catch{}
+  try{album=matchCatalog(await deadline(catalog((requested?.title??track.title)+' '+(requested?.artist??track.uploader)),6500),{title:requested?.title??track.title,uploader:requested?.artist??track.uploader});}catch{}
   const artwork=coverSize(requested?.artwork)||coverSize(album?.artworkUrl100)||coverSize(track.thumbnail);
   return {...track,
     title:requested?.title??album?.trackName??track.title,
