@@ -154,6 +154,34 @@ export function drawRigFrame(c,species,{view='room',theme='neon',action='idle',t
  if(action==='dormir')for(let i=0;i<3;i++){const u=(t+i/3)%1;c.save();c.globalAlpha=Math.sin(u*Math.PI);c.fillStyle=portrait?'#a38db8':p.accent;c.font='bold '+Math.round(11+u*8)+'px sans-serif';c.fillText('z',x+47+u*20,ground-115-u*35);c.restore();}
  if(action==='coletar'){round(c,x+44,ground-31,37,29,5,'#e5b77b',INK,1.6);line(c,'M'+(x+44)+' '+(ground-18)+' h37',INK,1.5);star(c,x+63,ground-18,6,'#fff2c8');}
 }
+
+// Transparent GIFs must restore the frame area before drawing the next one.
+// Otherwise moving ears/tails can leave ghost pixels on Discord's GIF decoder.
+export function normalizePortraitDisposal(buffer){
+  const out=Buffer.from(buffer);let offset=13,first=true,controls=0;
+  if(out[10]&128)offset+=3*(1<<((out[10]&7)+1));
+  const skip=()=>{while(offset<out.length){const n=out[offset++];if(!n)return;offset+=n;}throw Error('Truncated GIF block');};
+  while(offset<out.length){
+    const tag=out[offset++];if(tag===0x3b)break;
+    if(tag===0x21){
+      const kind=out[offset++];
+      if(kind===0xf9){
+        if(out[offset]!==4||!(out[offset+1]&1))throw Error('Portrait encoder lost transparency');
+        out[offset+1]=(out[offset+1]&0xe3)|(2<<2);
+        if(first){out[11]=out[offset+4];first=false;}
+        controls++;
+      }
+      skip();
+    }else if(tag===0x2c){
+      const flags=out[offset+8];offset+=9;
+      if(flags&128)offset+=3*(1<<((flags&7)+1));
+      offset++;skip();
+    }else throw Error('Invalid GIF block');
+  }
+  if(!controls)throw Error('Missing GIF frame controls');
+  return out;
+}
+
 export function renderRigGif(species,{view='room',theme='neon',action='idle'}={}){
  if(!['luna','koda'].includes(species))throw Error('Unknown companion rig');
  view=view==='portrait'?'portrait':'room';theme=Object.hasOwn(palette,theme)?theme:'neon';
@@ -165,7 +193,7 @@ export function renderRigGif(species,{view='room',theme='neon',action='idle'}={}
  try{
    for(let i=0;i<count;i++){drawRigFrame(c,species,{view,theme,action,t:i/count});const data=c.getImageData(0,0,w,h).data;
      enc.addFrame(new Uint8Array(data.buffer,data.byteOffset,data.byteLength),w,h,{delay:RIG_STEP});}
-   const buffer=Buffer.from(enc.finish());
+   const raw=Buffer.from(enc.finish()),buffer=view==='portrait'?normalizePortraitDisposal(raw):raw;
    if(buffer.length>8*1024*1024)throw Error('Rig GIF exceeds upload limit');
    return {buffer,ext:'gif',sourceAnimated:true,sourceFound:true,illustrated:true,fps:20};
  }finally{enc.dispose();}
