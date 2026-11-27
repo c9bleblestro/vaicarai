@@ -74,8 +74,12 @@ function strictMatch(query,track){
 }
 export function rankCandidates(query,tracks){
   const unique=new Map();
-  for(const t of tracks??[])if(validTrackUrl(t?.url)&&t.title&&!unique.has(t.url))unique.set(t.url,t);
-  return [...unique.values()].map(t=>({track:t,score:candidateScore(query,t)})).filter(x=>x.score>=0).sort((a,b)=>b.score-a.score).map(x=>x.track);
+  for(const t of tracks??[]){
+    if(!validTrackUrl(t?.url)||!t.title)continue;
+    const score=candidateScore(query,t);
+    if(score>=0&&(!unique.has(t.url)||score>unique.get(t.url).score))unique.set(t.url,{track:t,score});
+  }
+  return [...unique.values()].sort((a,b)=>b.score-a.score).map(x=>x.track);
 }
 async function spotifyInfo(url){
   const data=await json('https://open.spotify.com/oembed?url='+encodeURIComponent(url));
