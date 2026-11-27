@@ -18,8 +18,8 @@ const bar=n=>'▰'.repeat(Math.round(n/10))+'▱'.repeat(10-Math.round(n/10));
 function noPet(){
   return {...buildPetPanel({title:'Seu primeiro companheiro',body:'Equipe um pet do seu inventário ou compre um em /loja painel → Pets.',includeActions:false,extraRows:[new ActionRowBuilder().addComponents(new ButtonBuilder().setCustomId('profile_pet_btn').setLabel('Meus pets').setEmoji('🐾').setStyle(ButtonStyle.Secondary))]}),allowedMentions:mentionSafe};
 }
-function button(action,owner,petId,label,emoji,disabled=false,style=ButtonStyle.Secondary){
-  return new ButtonBuilder().setCustomId('pet_action:'+action+':'+owner+':'+petId).setLabel(label).setEmoji(emoji).setDisabled(disabled).setStyle(style);
+function button(action,owner,petId,label,emoji,disabled=false,style=ButtonStyle.Secondary,view='room'){
+  return new ButtonBuilder().setCustomId('pet_action:'+action+':'+owner+':'+petId+':'+(view==='portrait'?'p':'r')).setLabel(label).setEmoji(emoji).setDisabled(disabled).setStyle(style);
 }
 const row=(...items)=>new ActionRowBuilder().addComponents(items);
 function errorText(result){
@@ -64,23 +64,26 @@ export async function buildWorldPayload(world,{owner,guild,view='room',action='i
   ].join('\n');
   const adventure=away?'Explorando · retorna <t:'+Math.floor(ts(life.adventureUntil)/1000)+':R>':ready?'Sua aventura terminou! Recolha a recompensa.':'Pronto para explorar a floresta.';
   const cooldowns=Object.keys(CARE_ACTIONS).map(k=>{
-    const wait=petCooldown(life,eco,k,now);return k+': '+(wait?duration(wait):'pronto');
+    const wait=petCooldown(life,eco,k,now);return k+': '+(wait?'<t:'+Math.ceil((now+wait)/1000)+':R>':'pronto');
   }).join(' · ');
   const info=(notice?'**'+notice+'**\n\n':'')+statText+'\n\n'+
     '**Aventura:** '+adventure+'\n**Quarto:** '+(ROOM_THEMES[life.room]?.name??'Neon')+'\n-# '+cooldowns+
     (art&&!art.sourceFound&&pet.imageUrl?'\n-# A imagem original não pôde ser carregada; representação alternativa.':'')+
     (art?.ext==='png'||!art?'\n-# Animação indisponível nesta tentativa.':'')+
-    (art?.fallback?'\n-# Mostrando a animação padrão do pet.':'')+(away?'\n-# Prévia do companheiro enquanto a aventura está em andamento.':'');
+    (art?.fallback?'\n-# Mostrando a animação padrão do pet (efeito temporariamente indisponível).':'')+(away?'\n-# Prévia do companheiro enquanto a aventura está em andamento.':'');
   container.addTextDisplayComponents(new TextDisplayBuilder().setContent(info));
-  const disabled=k=>away||petCooldown(life,eco,k,now)>0;
+  // Cooldown buttons remain clickable: Discord cannot automatically enable a stale message.
+  // The transactional backend still validates every action and adventure state.
+  const disabled=k=>false;
+  const ctl=(...args)=>{while(args.length<7)args.push(undefined);return button(...args,view);};
   const rows=[
-    row(button('alimentar',owner,pet.id,'Alimentar','🍓',disabled('alimentar'),ButtonStyle.Success),button('brincar',owner,pet.id,'Brincar','🎾',disabled('brincar'),ButtonStyle.Primary),button('acariciar',owner,pet.id,'Carinho','💗',disabled('acariciar')),button('banho',owner,pet.id,'Banho','🫧',disabled('banho')),button('dormir',owner,pet.id,'Dormir','🌙',disabled('dormir'))),
-    row(button('aventura',owner,pet.id,'Explorar','🧭',away||ready),button('coletar',owner,pet.id,'Tesouro','🎁',!ready),button(view==='room'?'ver':'quarto',owner,pet.id,view==='room'?'Ver pet':'Quartinho',view==='room'?'🐾':'🏠'),button('status',owner,pet.id,'Atualizar','🔄'),new ButtonBuilder().setCustomId('profile_pet_btn').setLabel('Meus pets').setEmoji('🐾').setStyle(ButtonStyle.Secondary)),
-    row(...Object.entries(ROOM_THEMES).map(([key,p])=>button('tema_'+key,owner,pet.id,p.name+(owned.has(key)?'':' · '+p.price.toLocaleString('pt-BR')+'c'),key==='neon'?'🌌':key==='rose'?'🎀':'🌙',life.room===key)))
+    row(ctl('alimentar',owner,pet.id,'Alimentar','🍓',disabled('alimentar'),ButtonStyle.Success),ctl('brincar',owner,pet.id,'Brincar','🎾',disabled('brincar'),ButtonStyle.Primary),ctl('acariciar',owner,pet.id,'Carinho','💗',disabled('acariciar')),ctl('banho',owner,pet.id,'Banho','🫧',disabled('banho')),ctl('dormir',owner,pet.id,'Dormir','🌙',disabled('dormir'))),
+    row(ctl('aventura',owner,pet.id,'Explorar','🧭',false),ctl('coletar',owner,pet.id,'Tesouro','🎁',false),ctl(view==='room'?'ver':'quarto',owner,pet.id,view==='room'?'Ver pet':'Quartinho',view==='room'?'🐾':'🏠'),ctl('status',owner,pet.id,'Atualizar','🔄'),new ButtonBuilder().setCustomId('profile_pet_btn').setLabel('Meus pets').setEmoji('🐾').setStyle(ButtonStyle.Secondary)),
+    row(...Object.entries(ROOM_THEMES).map(([key,p])=>ctl('tema_'+key,owner,pet.id,p.name+(owned.has(key)?'':' · '+p.price.toLocaleString('pt-BR')+'c'),key==='neon'?'🌌':key==='rose'?'🎀':'🌙',life.room===key)))
   ];
   return {flags,components:[container,...rows],files,allowedMentions:mentionSafe};
 }
-async function runAction(i,action,{petId=null,legacy=false}={}){
+async function runAction(i,action,{petId=null,legacy=false,previousView='room'}={}){
   const isButton=typeof i.isButton==='function'&&i.isButton();
   if(isButton&&!legacy)await i.deferUpdate();
   else await i.deferReply(legacy?{flags:privateFlag}:{});
@@ -90,24 +93,24 @@ async function runAction(i,action,{petId=null,legacy=false}={}){
   const deliver=payload=>i.editReply(isButton&&!legacy?{attachments:[],...payload}:payload);
   if(!world)return deliver(noPet());
   if(petId&&petId!==world.pet.id)return i.followUp({content:'Seu pet equipado mudou. Abra S pet novamente.',flags:privateFlag});
-  let view=action==='ver'?'portrait':'room';
+  let view=action==='ver'?'portrait':['quarto','painel'].includes(action)?'room':previousView;
   if(['status','ver','quarto','painel'].includes(action))return deliver(await buildWorldPayload(world,{owner:userId,guild:i.guild,view}));
   const theme=action.startsWith('tema_')?action.slice(5):undefined;
   const result=await changePetWorld({userId,guildId,petId:world.pet.id,action:theme?'tema':action,theme});
   if(!result.ok){
     const updated=await getPetWorld(userId,guildId);
-    return deliver(await buildWorldPayload(updated,{owner:userId,guild:i.guild,notice:errorText(result)}));
+    return deliver(await buildWorldPayload(updated,{owner:userId,guild:i.guild,view,notice:errorText(result)}));
   }
   const notice=result.notice+(result.amount>0?' +'+result.amount.toLocaleString('pt-BR')+' '+coin():result.amount<0?' −'+Math.abs(result.amount).toLocaleString('pt-BR')+' coins':'')+(result.xp?' · +'+result.xp+' XP':'');
   return deliver(await buildWorldPayload(result,{owner:userId,guild:i.guild,view,action:theme?'idle':action,notice}));
 }
 const actions=new Set(['painel','ver','quarto','status','brincar','alimentar','acariciar','banho','dormir','aventura','coletar','tema_neon','tema_rose','tema_moon']);
 export async function handlePetButton(i){
-  const [,action,owner,petId]=i.customId.split(':');
+  const [,action,owner,petId,viewCode]=i.customId.split(':');
   if(!actions.has(action))return i.reply({content:'Ação de pet inválida.',flags:privateFlag});
   if(owner&&owner!==i.user.id)return i.reply({content:'Este quartinho pertence a outro membro. Use S pet para abrir o seu.',flags:privateFlag});
   // Older shop panels had unbound buttons. Open a private panel instead of editing another member's message.
-  return runAction(i,action,{petId,legacy:!owner});
+  return runAction(i,action,{petId,legacy:!owner,previousView:viewCode==='p'?'portrait':'room'});
 }
 const descriptions={
   painel:'Abra o quartinho animado e interaja com seu pet',
