@@ -35,6 +35,7 @@ import { generateTellonymCard } from '../utils/cardGenerator.js';
 import { getEmoji } from '../utils/emojiManager.js';
 import { buildWeddingCardPayload, getMarriageStats } from '../utils/weddingCard.js';
 import { likesMap, postDataMap } from '../utils/instaState.js';
+import {getInstaVotes,toggleInstaVote,updateInstaCounts,serializeInstaPost} from '../utils/instaFeed.js';
 import { buildTicketConfigPayload, buildTellonymConfigPayload, buildWelcomeConfigPayload, buildWelcomeV2, buildTicketPanelV2, buildTellonymPanelV2, buildTellonymComposerPanelV2, buildTellonymIdentityPanelV2, DEFAULT_TICKET_TEXT, DEFAULT_TICKET_OPEN_TEXT, DEFAULT_TELLONYM_TEXT, formatDeleteTime } from '../utils/configPanels.js';
 import { buildMenuOptsPanel, buildOptionDetailPanel, buildAddOptionModal, buildEditOptionModal, parseIdList } from '../utils/ticketMenuHandlers.js';
 import { buildPartnerConfigPayload } from '../utils/partnershipPanels.js';
@@ -1673,6 +1674,37 @@ export default {
           return handleBoostCfgBtn(interaction);
         }
 
+        if (/^insta_v2_(yes|no)_/.test(customId)) {
+          const [,kind,postId]=/^insta_v2_(yes|no)_(.+)$/.exec(customId);
+          await interaction.deferUpdate();
+          try{
+            await serializeInstaPost(postId,async()=>{
+              const counts=await toggleInstaVote(postId,interaction.user.id,kind==='yes'?1:-1);
+              const fresh=await interaction.message.fetch();
+              await fresh.edit({components:updateInstaCounts(fresh.components,postId,counts),allowedMentions:{parse:[]}});
+            });
+          }catch(error){
+            console.error('[INSTA VOTE]',error?.message??error);
+            await interaction.followUp({content:'Não foi possível atualizar seu voto. Tente novamente.',flags:MessageFlags.Ephemeral}).catch(()=>{});
+          }
+          return;
+        }
+        if(customId.startsWith('insta_v2_info_')){
+          const postId=customId.slice('insta_v2_info_'.length);
+          await interaction.deferReply({flags:MessageFlags.Ephemeral});
+          const votes=await getInstaVotes(postId);
+          const list=ids=>ids.length?ids.slice(0,25).map(id=>'<@'+id+'>').join(', ')+(ids.length>25?' e mais '+(ids.length-25):''):'Ninguém ainda.';
+          const row=new ActionRowBuilder().addComponents(new ButtonBuilder().setCustomId('insta_v2_comment_'+interaction.channelId+'_'+interaction.message.id).setEmoji(getEmoji('insta_comment')).setLabel('Comentar').setStyle(ButtonStyle.Secondary));
+          const cfg=await prisma.guildConfig.findUnique({where:{guildId:interaction.guildId}});
+          if(cfg?.instaHandle&&/^[A-Za-z0-9._]{1,30}$/.test(cfg.instaHandle))row.addComponents(new ButtonBuilder().setStyle(ButtonStyle.Link).setURL('https://www.instagram.com/'+cfg.instaHandle+'/').setLabel('@'+cfg.instaHandle));
+          return interaction.editReply({content:'**Curtidas ('+votes.yes.length+')**\n'+list(votes.yes)+'\n\n**Não curtidas ('+votes.no.length+')**\n'+list(votes.no),components:[row],allowedMentions:{parse:[]}});
+        }
+        if(customId.startsWith('insta_v2_comment_')){
+          const ids=customId.slice('insta_v2_comment_'.length);
+          const modal=new ModalBuilder().setCustomId('insta_v2_cmodal_'+ids).setTitle('Enviar comentário');
+          modal.addComponents(new ActionRowBuilder().addComponents(new TextInputBuilder().setCustomId('comment').setLabel('Seu comentário').setStyle(TextInputStyle.Paragraph).setRequired(true).setMaxLength(500)));
+          return interaction.showModal(modal);
+        }
         // ── INSTAGRAM: Toggle like ───────────────────────────────────────
         if (customId.startsWith('insta_like_')) {
           const postId = customId.slice('insta_like_'.length);
@@ -1749,7 +1781,10 @@ export default {
           const isAdmin  = interaction.member.permissions.has(PermissionFlagsBits.ManageMessages);
           if (interaction.user.id !== authorId && !isAdmin)
             return interaction.reply({ embeds: [errorEmbed('Apenas o autor ou um moderador pode deletar.')], ephemeral: true });
+          await interaction.deferUpdate();
           await interaction.message.delete();
+          const postId=parts.slice(2,-1).join('_');
+          await prisma.instaVote.deleteMany({where:{postId}}).catch(()=>{});
           return;
         }
 
@@ -4012,6 +4047,19 @@ export default {
           return handleVipConfigModal(interaction);
         }
 
+        if(interaction.customId.startsWith('insta_v2_cmodal_')){
+          const [channelId,messageId]=interaction.customId.slice('insta_v2_cmodal_'.length).split('_');
+          await interaction.deferReply({flags:MessageFlags.Ephemeral});
+          try{
+            const channel=await interaction.guild.channels.fetch(channelId);
+            const post=await channel.messages.fetch(messageId);
+            if(post.author.id!==interaction.client.user.id||!JSON.stringify(post.components).includes('insta_v2_info_'))throw Error('Publicação inválida');
+            let thread=post.thread??await interaction.guild.channels.fetch(messageId).catch(()=>null);
+            if(!thread){try{thread=await post.startThread({name:'Comentários',autoArchiveDuration:1440});}catch(error){thread=await interaction.guild.channels.fetch(messageId).catch(()=>null);if(!thread)throw error;}}
+            await thread.send({embeds:[new EmbedBuilder().setColor(0x2B2D31).setAuthor({name:interaction.member?.displayName??interaction.user.username,iconURL:interaction.user.displayAvatarURL()}).setDescription(interaction.fields.getTextInputValue('comment')).setTimestamp()],allowedMentions:{parse:[]}});
+            return interaction.editReply({content:'Comentário enviado!'});
+          }catch(error){console.error('[INSTA COMMENT]',error?.message??error);return interaction.editReply({content:'Não foi possível enviar o comentário.'});}
+        }
         // ── INSTAGRAM: Comentário enviado ───────────────────────────────
         if (interaction.customId.startsWith('insta_cmodal_')) {
           const threadId = interaction.customId.slice('insta_cmodal_'.length);
