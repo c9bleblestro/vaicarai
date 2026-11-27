@@ -4,11 +4,11 @@ import { EventEmitter } from 'node:events';
 import { spawnSync } from 'node:child_process';
 import prisma,{ensureCommunityRadioSchema} from '../src/database/client.js';
 import { AudioPlayerStatus } from '@discordjs/voice';
-import { Collection, PermissionFlagsBits, PermissionsBitField } from 'discord.js';
-import { scheduledStation, stationKey, rankQueue, toggleQueueVote, checkQueueLimit, safeDedication, canDj, buildFmPanel, CommunityRadioSession } from '../src/utils/communityRadio.js';
+import { ChannelType, Collection, PermissionFlagsBits, PermissionsBitField } from 'discord.js';
+import { scheduledStation, stationKey, rankQueue, toggleQueueVote, checkQueueLimit, safeDedication, canDj, buildFmPanel, CommunityRadioSession, resolveStartVoice, startFm, fmSessions } from '../src/utils/communityRadio.js';
 import { validQuery, validTrackUrl, speechText, openAnnouncement } from '../src/utils/fmAudio.js';
 import { reserveFmVoice, releaseFmVoice, isFmVoiceReserved } from '../src/utils/fmVoiceGuard.js';
-import cmd,{buildQueuePayload,buildRequestModal} from '../src/commands/general/fm.js';
+import cmd,{buildQueuePayload,buildRequestModal,parseFmStartPrefix} from '../src/commands/general/fm.js';
 const item=(id,votes=[],createdAt=1)=>({id,votes,createdAt,requesterId:'u',requesterName:'Alice',recipientName:'Bob',anonymous:true,message:'Olá!',track:{title:'Faixa',uploader:'Artista',duration:'4:20',url:'https://soundcloud.com/artista/faixa',thumbnail:null}});
 test('programação local, votos únicos por faixa e ordem estável',()=>{
   assert.equal(scheduledStation(new Date('2026-11-27T04:00:00Z')),'lofi');
@@ -127,4 +127,68 @@ test('comando legado de rádio removido e FM preservada',async()=>{
   const handlers=readFileSync(new URL('events/interactionCreate.js',root),'utf8');
   assert.doesNotMatch(handlers,/createRadioSession|buildRadioPanel/);
   assert.match(handlers,/handleFmInteraction/);
+});
+
+test('iniciar aceita todos campos opcionais, resolve a call atual e preserva prefixos antigos',async()=>{
+  const start=cmd.data.toJSON().options.find(o=>o.name==='iniciar');
+  assert.ok(start.options.some(o=>o.name==='musica'));
+  assert.ok(start.options.every(o=>!o.required));
+  assert.equal(resolveStartVoice(null,'current'),'current');
+  assert.equal(resolveStartVoice('explicit','current'),'explicit');
+  assert.throws(()=>resolveStartVoice(null,null),/Entre em uma call/);
+  const voice='123456789012345678',chat='123456789012345679';
+  const guild={channels:{fetch:async id=>({id,type:id===voice?ChannelType.GuildVoice:ChannelType.GuildText})}};
+  assert.deepEqual(await parseFmStartPrefix(guild,[],'current'),{voiceChannelId:'current',usesCurrentVoice:true,textChannelId:null,station:'auto',query:''});
+  const song=await parseFmStartPrefix(guild,['Die','For','You'],'current');
+  assert.equal(song.query,'Die For You');assert.equal(song.textChannelId,null);
+  const old=await parseFmStartPrefix(guild,['<#'+voice+'>','<#'+chat+'>','jazz','Die','For','You'],null);
+  assert.equal(old.voiceChannelId,voice);assert.equal(old.textChannelId,chat);assert.equal(old.station,'jazz');assert.equal(old.query,'Die For You');
+  const onlyPanel=await parseFmStartPrefix(guild,['<#'+chat+'>'],'current');
+  assert.equal(onlyPanel.voiceChannelId,'current');assert.equal(onlyPanel.textChannelId,chat);
+  await assert.rejects(parseFmStartPrefix(guild,[],null),/Entre em uma call/);
+});
+test('inicia sem painel, faixa inicial tem prioridade, publica depois e salva canal escolhido',async()=>{
+  const guildId='fm-flex-'+Date.now(),voiceId='voice',chatId='chat',otherChat='other';
+  const fetched=[],sent=[],edits=[];
+  const perms={has:()=>true};
+  const voice={id:voiceId,type:ChannelType.GuildVoice,guildId,members:new Collection(),permissionsFor:()=>perms};
+  const makeChannel=id=>({id,guildId,type:ChannelType.GuildText,permissionsFor:()=>perms,
+    send:async payload=>{const msg={id:'msg-'+sent.length,edit:async p=>{edits.push({id,p});},delete:async()=>{}};sent.push({id,payload,msg});return msg;}});
+  const chat=makeChannel(chatId),other=makeChannel(otherChat);
+  const guild={id:guildId,members:{me:{}},voiceStates:{cache:new Collection()},channels:{fetch:async id=>{fetched.push(id);return id===voiceId?voice:id===chatId?chat:other;}},client:{user:{id:'bot'}}};
+  const connection=new EventEmitter();connection.subscribe=()=>{};connection.destroy=()=>{};
+  let started=false;
+  const deps={joinVoice:()=>connection,waitReady:async()=>{},startPlayback:()=>{started=true;},
+    resolveTrack:async()=>({...item('demo').track,title:'Primeira música',platform:'soundcloud'})};
+  let session;
+  try{
+    await ensureCommunityRadioSchema();
+    // Um painel salvo de uma sessão anterior não deve voltar sem solicitação.
+    await prisma.communityRadio.create({data:{guildId,voiceChannelId:voiceId,textChannelId:chatId,panelMessageId:'old',queue:[{...item('old',['a','b']),requesterId:'another'}]}});
+    session=await startFm(guild,{voiceChannelId:voiceId,textChannelId:null,initialRequest:{userId:'starter',name:'Admin',query:'Primeira música'}},prisma,deps);
+    assert.equal(started,true);
+    assert.deepEqual(fetched,[voiceId]);
+    assert.equal(sent.length,0);
+    assert.equal(session.panel,null);
+    assert.equal(session.textChannel,null);
+    await session.refresh();
+    assert.equal(sent.length,0);
+    const stored=await prisma.communityRadio.findUnique({where:{guildId}});
+    assert.equal(stored.textChannelId,null);assert.equal(stored.panelMessageId,null);
+    const opening=await session.next();assert.equal(opening.track.title,'Primeira música');assert.equal(opening.opening,true);
+    assert.equal((await session.next()).id,'old');
+    const panel=await session.publishPanel(chat);
+    assert.equal(sent.length,1);assert.equal(session.config.textChannelId,chatId);
+    assert.equal((await prisma.communityRadio.findUnique({where:{guildId}})).panelMessageId,panel.id);
+    await session.publishPanel(chat);assert.equal(sent.length,1);
+    await session.publishPanel(other);assert.equal(sent.length,2);
+    assert.equal((await prisma.communityRadio.findUnique({where:{guildId}})).textChannelId,otherChat);
+    assert.ok(edits.some(e=>e.id===chatId&&JSON.stringify(e.p.components.map(c=>c.toJSON())).includes('movido')));
+  }finally{await session?.stop();fmSessions.delete(guildId);await prisma.communityRadio.deleteMany({where:{guildId}});await prisma.$disconnect();}
+});
+test('sem canal de voz não inicia e não muda a configuração existente',async()=>{
+  const guildId='fm-invalid-'+Date.now();
+  const guild={id:guildId,channels:{fetch:async()=>{throw new Error('Call não encontrada');}},members:{me:{}}};
+  await assert.rejects(startFm(guild,{voiceChannelId:'invalid',textChannelId:null},prisma,{joinVoice:()=>{throw Error('não deve conectar');}}),/Call não encontrada/);
+  assert.equal(isFmVoiceReserved(guildId),false);
 });

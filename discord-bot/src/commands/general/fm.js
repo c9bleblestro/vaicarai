@@ -61,6 +61,7 @@ export async function handleFmInteraction(i){
   if(!s||s.stopped)return i.reply({...textResult(needsRadio),flags:PRIVATE});
   const [,action,a,b]=i.customId.split(':');
   if(i.isButton()){
+    if(i.message?.id!==s.config.panelMessageId)return i.reply({...textResult('Este painel não está mais ativo. Use /fm painel.'),flags:PRIVATE});
     if(action==='request')return i.showModal(buildRequestModal());
     if(action==='dedicate'||action==='anonymous'){
       const select=new UserSelectMenuBuilder().setCustomId('fm:recipient:'+(action==='anonymous'?'1':'0')).setPlaceholder('Escolha quem receberá a música').setMaxValues(1);
@@ -144,7 +145,7 @@ export async function parseFmStartPrefix(guild,args,memberVoiceId){
     words.shift();
   }
   if(words[0]&&Object.hasOwn(STATIONS,words[0])&&(voice||panel||words.length===1))station=words.shift();
-  return {voiceChannelId:resolveStartVoice(voice,memberVoiceId),textChannelId:panel,station,query:words.join(' ').trim()};
+  return {voiceChannelId:resolveStartVoice(voice,memberVoiceId),usesCurrentVoice:!voice,textChannelId:panel,station,query:words.join(' ').trim()};
 }
 export default {
   data,name:'fm',aliases:['substancyfm'],
@@ -158,8 +159,9 @@ export default {
         if(!admin(i.member))throw new Error('Apenas a administração pode iniciar a rádio.');
         const role=i.options.getRole('dj');
         if(role?.id===i.guildId)throw new Error('Escolha um cargo de DJ diferente de @everyone.');
-        const voiceChannelId=resolveStartVoice(i.options.getChannel('voz')?.id,i.guild.voiceStates.cache.get(i.user.id)?.channelId??i.member?.voice?.channelId);
-        const s=await startFm(i.guild,{voiceChannelId,textChannelId:i.options.getChannel('painel')?.id??null,station:i.options.getString('estacao')||'auto',djRoleId:role?.id??null,initialRequest:initialRequest(i.user,i.member,i.options.getString('musica'))});
+        const explicitVoiceId=i.options.getChannel('voz')?.id;
+        const voiceChannelId=resolveStartVoice(explicitVoiceId,i.guild.voiceStates.cache.get(i.user.id)?.channelId??i.member?.voice?.channelId);
+        const s=await startFm(i.guild,{voiceChannelId,implicitVoiceUserId:explicitVoiceId?null:i.user.id,textChannelId:i.options.getChannel('painel')?.id??null,station:i.options.getString('estacao')||'auto',djRoleId:role?.id??null,initialRequest:initialRequest(i.user,i.member,i.options.getString('musica'))});
         return i.editReply(textResult(startNotice(s)));
       }
       if(sub==='parar'){
@@ -168,7 +170,7 @@ export default {
       }
       const s=fmSessions.get(i.guildId);
       if(!s||s.stopped)throw new Error(needsRadio);
-      if(sub==='painel'){await s.publishPanel(i.channel);return i.editReply(textResult('✅ '+panelNotice(s)));}
+      if(sub==='painel'){if(!i.memberPermissions?.has(PermissionFlagsBits.SendMessages))throw new Error('Você precisa ter permissão para enviar mensagens neste canal.');await s.publishPanel(i.channel);return i.editReply(textResult('✅ '+panelNotice(s)));}
       if(sub==='fila')return i.editReply(buildQueuePayload(s,i.member));
       if(sub==='pedir'||sub==='dedicar'){
         const recipient=sub==='dedicar'?await memberById(i.guild,i.options.getUser('membro',true).id):null;
@@ -187,7 +189,7 @@ export default {
       if(sub==='iniciar'){
         if(!admin(message.member))throw new Error('Apenas a administração pode iniciar a rádio.');
         const options=await parseFmStartPrefix(message.guild,args,message.member?.voice?.channelId);
-        const s=await startFm(message.guild,{...options,initialRequest:initialRequest(message.author,message.member,options.query)});
+        const s=await startFm(message.guild,{...options,implicitVoiceUserId:options.usesCurrentVoice?message.author.id:null,initialRequest:initialRequest(message.author,message.member,options.query)});
         return respond(startNotice(s));
       }
       if(sub==='parar'){
@@ -196,7 +198,7 @@ export default {
       }
       const s=fmSessions.get(message.guildId);
       if(!s||s.stopped)return respond(usage);
-      if(sub==='painel'){await s.publishPanel(message.channel);return respond('✅ '+panelNotice(s));}
+      if(sub==='painel'){if(!message.channel.permissionsFor(message.member)?.has(PermissionFlagsBits.SendMessages))throw new Error('Você precisa ter permissão para enviar mensagens neste canal.');await s.publishPanel(message.channel);return respond('✅ '+panelNotice(s));}
       if(sub==='entrar')return respond(panelNotice(s));
       if(sub==='fila')return message.reply(buildQueuePayload(s,message.member));
       if(sub==='pedir')return respond(await makeRequest(s,message.author,message.member,args.join(' '),null,'',false));

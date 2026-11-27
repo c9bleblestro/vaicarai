@@ -157,7 +157,7 @@ export class CommunityRadioSession {
     try{await this.panelOperation(async()=>{
       if(!this.panel)return;
       try{await this.panel.edit(buildFmPanel(this));}
-    catch(error){
+      catch(error){
       if(Number(error?.code)===10008&&!this.stopped){
         try{
           this.panel=await this.textChannel.send(buildFmPanel(this));
@@ -165,7 +165,7 @@ export class CommunityRadioSession {
           await this.db.communityRadio.update({where:{guildId:this.guild.id},data:{panelMessageId:this.panel.id}});
         }catch(e){console.warn('[FM] Novo painel:',e?.code??e?.message??e);}
       }else console.warn('[FM] Painel:',error?.code??error?.message??error);
-    }
+      }
     });}
     finally{this.refreshing=false;}
   }
@@ -289,7 +289,7 @@ export class CommunityRadioSession {
     releaseFmVoice(this.guild.id);
   }
 }
-export async function startFm(guild,settings,db=prisma){
+export async function startFm(guild,settings,db=prisma,deps={}){
   if(!reserveFmVoice(guild.id))throw new Error('A Substancy FM já está ativa ou iniciando.');
   let connection, session;
   try{
@@ -304,14 +304,15 @@ export async function startFm(guild,settings,db=prisma){
     let openingItem=null;
     if(settings.initialRequest){
       checkQueueLimit(queue,settings.initialRequest.userId);
-      openingItem=await createFmRequestItem({...settings.initialRequest,opening:true});
+      openingItem=await createFmRequestItem({...settings.initialRequest,opening:true},deps.resolveTrack??resolveFmTrack);
       // A nova abertura é prioritária, sem apagar pedidos anteriores.
       queue=[openingItem,...queue.map(x=>({...x,opening:false}))];
     }
+    if(settings.implicitVoiceUserId&&guild.voiceStates.cache.get(settings.implicitVoiceUserId)?.channelId!==voice.id)throw new Error('Você saiu ou mudou de call antes de iniciar a FM. Tente novamente.');
     if(getVoiceConnection(guild.id))throw new Error('Outra sessão de voz foi iniciada.');
-    connection=joinVoiceChannel({guildId:guild.id,channelId:voice.id,adapterCreator:guild.voiceAdapterCreator,selfDeaf:true,selfMute:false});
+    connection=(deps.joinVoice??joinVoiceChannel)({guildId:guild.id,channelId:voice.id,adapterCreator:guild.voiceAdapterCreator,selfDeaf:true,selfMute:false});
     connection.on('error',err=>console.warn('[FM] Voz:',err?.message??err));
-    await entersState(connection,VoiceConnectionStatus.Ready,25000);
+    await (deps.waitReady??entersState)(connection,VoiceConnectionStatus.Ready,25000);
     const config={guildId:guild.id,voiceChannelId:voice.id,textChannelId:channel?.id??null,station:settings.station||'auto',djRoleId:settings.djRoleId??null,enabled:true,queue};
     session=new CommunityRadioSession({guild,voiceChannel:voice,textChannel:channel,connection,config,panel:null,db});
     if(channel&&existing?.textChannelId===channel.id&&existing.panelMessageId){
@@ -329,7 +330,7 @@ export async function startFm(guild,settings,db=prisma){
       try{await Promise.race([entersState(connection,VoiceConnectionStatus.Signalling,5000),entersState(connection,VoiceConnectionStatus.Connecting,5000)]);}
       catch{await session.stop();}
     });
-    session.start();return session;
+    (deps.startPlayback??(s=>s.start()))(session);return session;
   }catch(error){
     if(session)await session.stop();else{try{connection?.destroy();}catch{}releaseFmVoice(guild.id);}
     throw error;
