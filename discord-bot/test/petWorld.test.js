@@ -153,3 +153,12 @@ test('same species uses one cached reaction across guilds; real themed room retu
   assert.ok(frames.length>=8);
   assert.ok(frames.reduce((s,f)=>s+f.delay,0)>=5500);
 });
+
+test('room and portrait controls preserve the selected view and do not freeze at a cooldown',async()=>{
+  const pet={id:'pw2-luna-test',name:'Luna',emoji:'🐱'};
+  const world={pet,life:{...sample,careAt:new Date(),xp:0,room:'neon',ownedRooms:'neon'},eco:{lastPetPlay:new Date()}};
+  const payload=await buildWorldPayload(world,{owner:'123456789012345678',view:'portrait'});
+  const play=payload.components.flatMap(c=>c.toJSON().components??[]).find(b=>b.custom_id?.startsWith('pet_action:brincar:'));
+  assert.ok(play);assert.ok(play.custom_id.endsWith(':p'));assert.equal(play.disabled,false);
+  assert.ok(JSON.stringify(payload.components.map(c=>c.toJSON())).includes('<t:'));
+});
