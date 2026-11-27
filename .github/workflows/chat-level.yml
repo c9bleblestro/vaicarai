@@ -63,7 +63,6 @@ jobs:
           node --check src/utils/fmTracks.js
           node --check src/commands/general/fm.js
           node --check src/commands/general/musica.js
-          node --check src/commands/general/radio.js
           node --check src/utils/musicManager.js
           node --check src/utils/radioManager.js
           node --check src/commands/general/nivel.js
