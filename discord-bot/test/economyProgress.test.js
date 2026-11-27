@@ -2,7 +2,7 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import {loadImage} from '@napi-rs/canvas';
 import {parseGIF,decompressFrames} from 'gifuct-js';
-import {rewardStatus,activeStreak,makeWorkChallenge,DAY,workProgressValue} from '../src/utils/economyProgress.js';
+import {rewardStatus,activeStreak,makeWorkChallenge,DAY,workProgressValue,cosmeticCandidates} from '../src/utils/economyProgress.js';
 import {generateEconomyRewardArt,generateBalanceCard} from '../src/utils/economyCards.js';
 import {claimRewardAtomic} from '../src/commands/economia/eco.js';
 import prisma from '../src/database/client.js';
@@ -36,4 +36,13 @@ test('simultaneous daily claims can only credit once',async()=>{
     assert.equal(results.filter(r=>r.ok).length,1);
     const eco=await prisma.economy.findUnique({where:{userId_guildId:{userId,guildId}}});assert.equal(eco.balance,1020);assert.equal(eco.dailyStreak,1);
   }finally{await prisma.economy.deleteMany({where:{userId,guildId}});await prisma.$disconnect();}
+});
+
+test('exclusive cosmetics are deterministic at milestones and loot chances are bounded',()=>{
+  assert.deepEqual(cosmeticCandidates('daily',6),[]);
+  assert.deepEqual(cosmeticCandidates('daily',30),['eco_blossom','eco_pearl','eco_crown']);
+  assert.deepEqual(cosmeticCandidates('weekly',0,()=>.09),['eco_silver']);
+  assert.deepEqual(cosmeticCandidates('weekly',0,()=>.1),[]);
+  assert.deepEqual(cosmeticCandidates('monthly',0,()=>.24),['eco_gold']);
+  assert.deepEqual(cosmeticCandidates('monthly',0,()=>.25),[]);
 });
