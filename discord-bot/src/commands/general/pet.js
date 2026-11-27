@@ -1,342 +1,127 @@
-import { SlashCommandBuilder } from 'discord.js';
-import prisma from '../../database/client.js';
-
-import { getEmoji } from '../../utils/emojiManager.js';
-import { buildPetPanel, petDisplayName, petInteractionEmojis } from '../../utils/petComponents.js';
-const COIN = () => getEmoji('futecoins');
-const PET_HEART = () => petInteractionEmojis.heart();
-const PET_TIME  = () => petInteractionEmojis.time();
-const PET_FOOD  = () => petInteractionEmojis.food();
-const PET_BALL  = () => petInteractionEmojis.ball();
-
-const PET_INTERACTION_CD = 20 * 60 * 1000;
-const PLAY_CD  = PET_INTERACTION_CD;
-const FEED_CD  = PET_INTERACTION_CD;
-const PET_CD   = PET_INTERACTION_CD;
-
-const PLAY_MIN = 150, PLAY_MAX = 300;
-const FEED_MIN = 80,  FEED_MAX = 160;
-const PET_MIN  = 40,  PET_MAX  = 100;
-
-function rand(min, max) {
-  return Math.floor(Math.random() * (max - min + 1)) + min;
+import {
+  SlashCommandBuilder, ContainerBuilder, TextDisplayBuilder, MediaGalleryBuilder,
+  MediaGalleryItemBuilder, ActionRowBuilder, ButtonBuilder, ButtonStyle, MessageFlags,
+  AttachmentBuilder
+} from 'discord.js';
+import {getEmoji} from '../../utils/emojiManager.js';
+import {buildPetPanel,petDisplayName,resolvePetEmoji} from '../../utils/petComponents.js';
+import {getPetWorld,changePetWorld,petStats,petLevel,petMood,petCooldown,ROOM_THEMES,CARE_ACTIONS} from '../../utils/petLife.js';
+import {renderPetWorld} from '../../utils/petWorldArt.js';
+const coin=()=>getEmoji('futecoins');
+const flags=MessageFlags.IsComponentsV2;
+const privateFlag=MessageFlags.Ephemeral;
+const ts=x=>x?new Date(x).getTime():0;
+const mentionSafe={parse:[],repliedUser:false};
+const duration=ms=>{const m=Math.ceil(ms/60000);return m>=60?Math.floor(m/60)+'h '+m%60+'min':m+'min';};
+const bar=n=>'▰'.repeat(Math.round(n/10))+'▱'.repeat(10-Math.round(n/10));
+function noPet(){
+  return {...buildPetPanel({title:'Seu primeiro companheiro',body:'Equipe um pet do seu inventário ou compre um em /loja painel → Pets.',includeActions:false,extraRows:[new ActionRowBuilder().addComponents(new ButtonBuilder().setCustomId('profile_pet_btn').setLabel('Meus pets').setEmoji('🐾').setStyle(ButtonStyle.Secondary))]}),allowedMentions:mentionSafe};
 }
-
-function formatMs(ms) {
-  const totalSecs = Math.ceil(ms / 1000);
-  const h = Math.floor(totalSecs / 3600);
-  const m = Math.floor((totalSecs % 3600) / 60);
-  const s = totalSecs % 60;
-  if (h > 0) return `${h}h ${m}m`;
-  if (m > 0) return `${m}m ${s}s`;
-  return `${s}s`;
+function button(action,owner,petId,label,emoji,disabled=false,style=ButtonStyle.Secondary){
+  return new ButtonBuilder().setCustomId('pet_action:'+action+':'+owner+':'+petId).setLabel(label).setEmoji(emoji).setDisabled(disabled).setStyle(style);
 }
-
-const BRINCAR_MSGS = [
-  'você jogou bolinha com',
-  'você fez corrida com',
-  'você brincou de esconde-esconde com',
-  'você jogou cabo de guerra com',
-  'você dançou com',
-  'você fez malabarismo com',
-  'você treinou acrobacias com',
-];
-
-const ALIMENTAR_MSGS = [
-  'você preparou uma refeição especial para',
-  'você deu um petisco favorito para',
-  'você cozinhou um prato gourmet para',
-  'você trouxe fruta fresca para',
-  'você serviu um banquete para',
-  'você assou biscoitos e deu para',
-];
-
-const ACARICIAR_MSGS = [
-  'você passou a mão na cabeça de',
-  'você deu um abraço apertado em',
-  'você coçou a barriga de',
-  'você fez carinho na orelha de',
-  'você deu um selinho em',
-  'você cantarolou uma música para acalmar',
-];
-
-const BRINCAR_REACOES = [
-  'ficou animadíssimo!',
-  'correu em círculos de felicidade!',
-  'deu um salto enorme de alegria!',
-  'se rolou de tanto rir!',
-  'deu uma volta de honra!',
-];
-
-const ALIMENTAR_REACOES = [
-  'comeu com muito entusiasmo!',
-  'lambeu o prato todo!',
-  'ficou de barriga cheia e feliz!',
-  'pediu mais um pouco!',
-  'agradeceu com um olhar carinhoso!',
-];
-
-const ACARICIAR_REACOES = [
-  'ronronou de satisfação!',
-  'fechou os olhos de prazer!',
-  'encostou a cabeça em você!',
-  'ficou com a cauda balançando!',
-  'deu uma lambida carinhosa!',
-];
-
-function pickRand(arr) { return arr[Math.floor(Math.random() * arr.length)]; }
-
-async function getOrCreateEco(userId, guildId) {
-  return prisma.economy.upsert({
-    where:  { userId_guildId: { userId, guildId } },
-    create: { userId, guildId },
-    update: {},
-  });
+const row=(...items)=>new ActionRowBuilder().addComponents(items);
+function errorText(result){
+  return ({
+    changed:'Seu pet equipado mudou. Abra S pet novamente.',
+    cooldown:'Seu pet ainda precisa de '+duration(result.remaining||0)+' antes dessa interação.',
+    away:'Seu pet está explorando! Volta em '+duration(result.remaining||0)+'.',
+    collect:'Sua aventura terminou. Recolha o tesouro primeiro.',
+    noadventure:'Não há nenhuma aventura para coletar.',
+    needs:'Alimente seu pet e deixe-o descansar antes de explorar.',
+    money:'Você precisa de '+Number(result.cost||0).toLocaleString('pt-BR')+' coins na carteira.',
+    busy:'Outra interação foi concluída ao mesmo tempo. Tente novamente.',
+    invalid:'Ação inválida.'
+  })[result.reason]??'Não foi possível concluir esta interação.';
 }
-
-async function resolveActivePet(userId, guildId) {
-  const profile = await prisma.userProfile.findUnique({ where: { userId } });
-  if (!profile?.activePet) return null;
-  const pet = await prisma.pet.findUnique({ where: { id: profile.activePet } }).catch(() => null);
-  if (!pet) return null;
-  const purchased = await prisma.userPurchase.findUnique({
-    where: { userId_itemType_itemRef: { userId, itemType: 'pet', itemRef: pet.id } },
-  });
-  if (!purchased) return null;
-  return pet;
-}
-
-function noPetPayload() {
-  return buildPetPanel({
-    title: 'Nenhum pet equipado',
-    body: 'Você ainda não tem um pet equipado.\n\nCompre um em `/loja painel` → **Comprar** → **Pets** e depois equipe em `/perfil` → **Meu Pet**.',
-  });
-}
-
-async function deferPetInteraction(interaction, options = {}) {
-  if (typeof interaction.isButton === 'function' && interaction.isButton()) {
-    return interaction.deferUpdate();
+export async function buildWorldPayload(world,{owner,guild,view='room',action='idle',notice='',now=Date.now()}={}){
+  if(!world)return noPet();
+  const {pet,life,eco}=world,stats=petStats(life,now),lvl=petLevel(life.xp),mood=petMood(stats);
+  const away=ts(life.adventureUntil)>now,ready=Boolean(life.adventureUntil)&&!away;
+  const owned=new Set(life.ownedRooms.split(','));
+  if(away&&action!=='aventura')action='away';
+  else if(action==='idle'&&mood==='Sonolento')action='dormir';
+  const artPet={...pet,emoji:resolvePetEmoji(pet.emoji,guild)};
+  let art;
+  try{art=await renderPetWorld(artPet,{theme:life.room,view,action});}catch(error){console.warn('[PET WORLD]',error?.message??error);}
+  const container=new ContainerBuilder();
+  const top='## '+petDisplayName(pet,guild)+' · '+(view==='room'?'Meu quartinho':'Meu pet')+'\n'+
+    '**Nível '+lvl.level+'** · '+lvl.stage+' · '+mood+'\n-# '+lvl.current+' / '+lvl.needed+' XP';
+  container.addTextDisplayComponents(new TextDisplayBuilder().setContent(top));
+  const files=[];
+  if(art){
+    const filename='pet-world.'+art.ext;
+    files.push(new AttachmentBuilder(art.buffer,{name:filename}));
+    container.addMediaGalleryComponents(new MediaGalleryBuilder().addItems(new MediaGalleryItemBuilder().setURL('attachment://'+filename)));
   }
-  return interaction.deferReply(options);
+  const statText=[
+    '🍓 Saciedade  '+bar(stats.fullness)+' **'+stats.fullness+'%**',
+    '💗 Felicidade  '+bar(stats.happiness)+' **'+stats.happiness+'%**',
+    '🌙 Energia  '+bar(stats.energy)+' **'+stats.energy+'%**',
+    '🫧 Higiene  '+bar(stats.hygiene)+' **'+stats.hygiene+'%**',
+    '🐾 Vínculo  '+bar(stats.bond)+' **'+stats.bond+'%**'
+  ].join('\n');
+  const adventure=away?'Explorando · retorna <t:'+Math.floor(ts(life.adventureUntil)/1000)+':R>':ready?'Sua aventura terminou! Recolha a recompensa.':'Pronto para explorar a floresta.';
+  const cooldowns=Object.keys(CARE_ACTIONS).map(k=>{
+    const wait=petCooldown(life,eco,k,now);return k+': '+(wait?duration(wait):'pronto');
+  }).join(' · ');
+  const info=(notice?'**'+notice+'**\n\n':'')+statText+'\n\n'+
+    '**Aventura:** '+adventure+'\n**Quarto:** '+(ROOM_THEMES[life.room]?.name??'Neon')+'\n-# '+cooldowns+
+    (art&&!art.sourceFound&&pet.imageUrl?'\n-# A imagem original não pôde ser carregada; representação alternativa.':'')+
+    (art?.ext==='png'?'\n-# Animação indisponível nesta tentativa.':'');
+  container.addTextDisplayComponents(new TextDisplayBuilder().setContent(info));
+  const disabled=k=>away||petCooldown(life,eco,k,now)>0;
+  const rows=[
+    row(button('alimentar',owner,pet.id,'Alimentar','🍓',disabled('alimentar'),ButtonStyle.Success),button('brincar',owner,pet.id,'Brincar','🎾',disabled('brincar'),ButtonStyle.Primary),button('acariciar',owner,pet.id,'Carinho','💗',disabled('acariciar')),button('banho',owner,pet.id,'Banho','🫧',disabled('banho')),button('dormir',owner,pet.id,'Dormir','🌙',disabled('dormir'))),
+    row(button('aventura',owner,pet.id,'Explorar','🧭',away||ready),button('coletar',owner,pet.id,'Tesouro','🎁',!ready),button(view==='room'?'ver':'quarto',owner,pet.id,view==='room'?'Ver pet':'Quartinho',view==='room'?'🐾':'🏠'),button('status',owner,pet.id,'Atualizar','🔄'),new ButtonBuilder().setCustomId('profile_pet_btn').setLabel('Meus pets').setEmoji('🐾').setStyle(ButtonStyle.Secondary)),
+    row(...Object.entries(ROOM_THEMES).map(([key,p])=>button('tema_'+key,owner,pet.id,p.name+(owned.has(key)?'':' · '+p.price.toLocaleString('pt-BR')+'c'),key==='neon'?'🌌':key==='rose'?'🎀':'🌙',life.room===key)))
+  ];
+  return {flags,components:[container,...rows],files,allowedMentions:mentionSafe};
 }
-
-async function handleBrincar(interaction) {
-  await deferPetInteraction(interaction);
-
-  const userId  = interaction.user.id;
-  const guildId = interaction.guildId;
-
-  const pet = await resolveActivePet(userId, guildId);
-  if (!pet) return interaction.editReply(noPetPayload());
-
-  const eco  = await getOrCreateEco(userId, guildId);
-  const now  = Date.now();
-  const last = eco.lastPetPlay ? new Date(eco.lastPetPlay).getTime() : 0;
-  const diff = now - last;
-
-  if (diff < PLAY_CD) {
-    return interaction.editReply(buildPetPanel({
-      title: `${petDisplayName(pet, interaction.guild)} está descansando`,
-      body: `Seu pet precisa descansar depois de tanto brincar.\n\n${PET_TIME()} Próxima brincadeira em **${formatMs(PLAY_CD - diff)}**.\n\nTente alimentar ou acariciar enquanto isso.`,
-      pet,
-    }));
+async function runAction(i,action,{petId=null,legacy=false}={}){
+  const isButton=typeof i.isButton==='function'&&i.isButton();
+  if(isButton&&!legacy)await i.deferUpdate();
+  else await i.deferReply(legacy?{flags:privateFlag}:{});
+  const userId=i.user.id,guildId=i.guildId;
+  if(!guildId)return i.editReply({content:'Use no servidor.'});
+  const world=await getPetWorld(userId,guildId);
+  const deliver=payload=>i.editReply(isButton&&!legacy?{attachments:[],...payload}:payload);
+  if(!world)return deliver(noPet());
+  if(petId&&petId!==world.pet.id)return i.followUp({content:'Seu pet equipado mudou. Abra S pet novamente.',flags:privateFlag});
+  let view=action==='ver'?'portrait':'room';
+  if(['status','ver','quarto','painel'].includes(action))return deliver(await buildWorldPayload(world,{owner:userId,guild:i.guild,view}));
+  const theme=action.startsWith('tema_')?action.slice(5):undefined;
+  const result=await changePetWorld({userId,guildId,petId:world.pet.id,action:theme?'tema':action,theme});
+  if(!result.ok){
+    const updated=await getPetWorld(userId,guildId);
+    return deliver(await buildWorldPayload(updated,{owner:userId,guild:i.guild,notice:errorText(result)}));
   }
-
-  const reward = rand(PLAY_MIN, PLAY_MAX);
-  await prisma.economy.update({
-    where: { userId_guildId: { userId, guildId } },
-    data:  { balance: { increment: reward }, lastPetPlay: new Date() },
-  });
-
-  const acao   = pickRand(BRINCAR_MSGS);
-  const reacao = pickRand(BRINCAR_REACOES);
-
-  return interaction.editReply(buildPetPanel({
-    title: `${PET_BALL()} Brincadeira com ${petDisplayName(pet, interaction.guild)}`,
-    body:
-      `**${interaction.user.displayName ?? interaction.user.username}** ${acao} **${pet.name}**, que ${reacao}\n\n` +
-      `Seu pet ficou tão feliz que te deu **+${reward.toLocaleString('pt-BR')} ${COIN()}**!\n\n` +
-      `💰 **Ganhou:** +${reward.toLocaleString('pt-BR')} ${COIN()}\n` +
-      `👛 **Carteira:** ${(eco.balance + reward).toLocaleString('pt-BR')} ${COIN()}\n\n` +
-      `${PET_TIME()} Próxima brincadeira em ${formatMs(PLAY_CD)}.`,
-    pet,
-  }));
+  const notice=result.notice+(result.amount>0?' +'+result.amount.toLocaleString('pt-BR')+' '+coin():result.amount<0?' −'+Math.abs(result.amount).toLocaleString('pt-BR')+' coins':'')+(result.xp?' · +'+result.xp+' XP':'');
+  return deliver(await buildWorldPayload(result,{owner:userId,guild:i.guild,view,action:theme?'idle':action,notice}));
 }
-
-async function handleAlimentar(interaction) {
-  await deferPetInteraction(interaction);
-
-  const userId  = interaction.user.id;
-  const guildId = interaction.guildId;
-
-  const pet = await resolveActivePet(userId, guildId);
-  if (!pet) return interaction.editReply(noPetPayload());
-
-  const eco  = await getOrCreateEco(userId, guildId);
-  const now  = Date.now();
-  const last = eco.lastPetFeed ? new Date(eco.lastPetFeed).getTime() : 0;
-  const diff = now - last;
-
-  if (diff < FEED_CD) {
-    return interaction.editReply(buildPetPanel({
-      title: `${petDisplayName(pet, interaction.guild)} está satisfeito`,
-      body: `Seu pet ainda está de barriga cheia!\n\n${PET_TIME()} Próxima alimentação em **${formatMs(FEED_CD - diff)}**.\n\nTente brincar ou acariciar enquanto isso.`,
-      pet,
-    }));
-  }
-
-  const reward = rand(FEED_MIN, FEED_MAX);
-  await prisma.economy.update({
-    where: { userId_guildId: { userId, guildId } },
-    data:  { balance: { increment: reward }, lastPetFeed: new Date() },
-  });
-
-  const acao   = pickRand(ALIMENTAR_MSGS);
-  const reacao = pickRand(ALIMENTAR_REACOES);
-
-  return interaction.editReply(buildPetPanel({
-    title: `${PET_FOOD()} Alimentando ${petDisplayName(pet, interaction.guild)}`,
-    body:
-      `**${interaction.user.displayName ?? interaction.user.username}** ${acao} **${pet.name}**, que ${reacao}\n\n` +
-      `Como agradecimento, você ganhou **+${reward.toLocaleString('pt-BR')} ${COIN()}**!\n\n` +
-      `💰 **Ganhou:** +${reward.toLocaleString('pt-BR')} ${COIN()}\n` +
-      `👛 **Carteira:** ${(eco.balance + reward).toLocaleString('pt-BR')} ${COIN()}\n\n` +
-      `${PET_TIME()} Próxima alimentação em ${formatMs(FEED_CD)}.`,
-    pet,
-  }));
+const actions=new Set(['painel','ver','quarto','status','brincar','alimentar','acariciar','banho','dormir','aventura','coletar','tema_neon','tema_rose','tema_moon']);
+export async function handlePetButton(i){
+  const [,action,owner,petId]=i.customId.split(':');
+  if(!actions.has(action))return i.reply({content:'Ação de pet inválida.',flags:privateFlag});
+  if(owner&&owner!==i.user.id)return i.reply({content:'Este quartinho pertence a outro membro. Use S pet para abrir o seu.',flags:privateFlag});
+  // Older shop panels had unbound buttons. Open a private panel instead of editing another member's message.
+  return runAction(i,action,{petId,legacy:!owner});
 }
-
-async function handleAcariciar(interaction) {
-  await deferPetInteraction(interaction);
-
-  const userId  = interaction.user.id;
-  const guildId = interaction.guildId;
-
-  const pet = await resolveActivePet(userId, guildId);
-  if (!pet) return interaction.editReply(noPetPayload());
-
-  const eco  = await getOrCreateEco(userId, guildId);
-  const now  = Date.now();
-  const last = eco.lastPetPet ? new Date(eco.lastPetPet).getTime() : 0;
-  const diff = now - last;
-
-  if (diff < PET_CD) {
-    return interaction.editReply(buildPetPanel({
-      title: `${petDisplayName(pet, interaction.guild)} precisa de um tempo`,
-      body: `Seu pet está descansando após o último carinho.\n\n${PET_TIME()} Próximo carinho em **${formatMs(PET_CD - diff)}**.\n\nTente brincar ou alimentar enquanto isso.`,
-      pet,
-    }));
-  }
-
-  const reward = rand(PET_MIN, PET_MAX);
-  await prisma.economy.update({
-    where: { userId_guildId: { userId, guildId } },
-    data:  { balance: { increment: reward }, lastPetPet: new Date() },
-  });
-
-  const acao   = pickRand(ACARICIAR_MSGS);
-  const reacao = pickRand(ACARICIAR_REACOES);
-
-  return interaction.editReply(buildPetPanel({
-    title: `${PET_HEART()} Carinho em ${petDisplayName(pet, interaction.guild)}`,
-    body:
-      `**${interaction.user.displayName ?? interaction.user.username}** ${acao} **${pet.name}**, que ${reacao}\n\n` +
-      `O carinho valeu **+${reward.toLocaleString('pt-BR')} ${COIN()}**!\n\n` +
-      `💰 **Ganhou:** +${reward.toLocaleString('pt-BR')} ${COIN()}\n` +
-      `👛 **Carteira:** ${(eco.balance + reward).toLocaleString('pt-BR')} ${COIN()}\n\n` +
-      `${PET_TIME()} Próximo carinho em ${formatMs(PET_CD)}.`,
-    pet,
-  }));
-}
-
-async function handleStatus(interaction) {
-  await deferPetInteraction(interaction, { ephemeral: true });
-
-  const userId  = interaction.user.id;
-  const guildId = interaction.guildId;
-
-  const pet = await resolveActivePet(userId, guildId);
-  if (!pet) return interaction.editReply(noPetPayload());
-
-  const eco = await getOrCreateEco(userId, guildId);
-  const now = Date.now();
-
-  function cdLine(last, cd, label) {
-    if (!last) return `${label}: ✅ Disponível`;
-    const diff = now - new Date(last).getTime();
-    if (diff >= cd) return `${label}: ✅ Disponível`;
-    return `${label}: ⏳ ${formatMs(cd - diff)}`;
-  }
-
-  return interaction.editReply(buildPetPanel({
-    title: `${petDisplayName(pet, interaction.guild)} — Status`,
-    body:
-      `Cooldowns das interações com seu pet:\n\n` +
-      `${PET_BALL()} ${cdLine(eco.lastPetPlay, PLAY_CD, 'Brincar')} (até **300 ${COIN()}**)\n` +
-      `${PET_FOOD()} ${cdLine(eco.lastPetFeed, FEED_CD, 'Alimentar')} (até **160 ${COIN()}**)\n` +
-      `${PET_HEART()} ${cdLine(eco.lastPetPet, PET_CD, 'Acariciar')} (até **100 ${COIN()}**)\n\n` +
-      `Use os botões abaixo para interagir sem precisar digitar outro comando.`,
-    pet,
-  }));
-}
-
-export async function handlePetButton(interaction) {
-  const action = interaction.customId.slice('pet_action:'.length);
-  if (action === 'brincar') return handleBrincar(interaction);
-  if (action === 'alimentar') return handleAlimentar(interaction);
-  if (action === 'acariciar') return handleAcariciar(interaction);
-  if (action === 'status') return handleStatus(interaction);
-  return interaction.reply({ content: '❌ Ação de pet inválida.', ephemeral: true });
-}
-
+const descriptions={
+  painel:'Abra o quartinho animado e interaja com seu pet',
+  ver:'Veja seu pet animado de perto',quarto:'Abra o quarto do seu pet',status:'Veja atributos e intervalos',
+  brincar:'Brinque e ganhe coins',alimentar:'Alimente seu pet',acariciar:'Faça carinho',banho:'Dê um banho',
+  dormir:'Deixe seu pet descansar',aventura:'Explore a floresta por 15 minutos',coletar:'Receba o tesouro da aventura'
+};
+const data=new SlashCommandBuilder().setName('pet').setDescription('Cuide, evolua e personalize seu companheiro');
+for(const [name,description] of Object.entries(descriptions))data.addSubcommand(s=>s.setName(name).setDescription(description));
+const aliases={b:'brincar',a:'alimentar',c:'acariciar',s:'status',carinho:'acariciar',room:'quarto',explorar:'aventura',tesouro:'coletar'};
 export default {
-  data: new SlashCommandBuilder()
-    .setName('pet')
-    .setDescription('🐾 Interaja com seu pet e ganhe moedas!')
-    .addSubcommand(s =>
-     s.setName('brincar').setDescription('🎾 Brinque com seu pet e ganhe 150–300 moedas (CD: 20 min)'))
-    .addSubcommand(s =>
-     s.setName('alimentar').setDescription('🍖 Alimente seu pet e ganhe 80–160 moedas (CD: 20 min)'))
-    .addSubcommand(s =>
-     s.setName('acariciar').setDescription('💜 Faça carinho no seu pet e ganhe 40–100 moedas (CD: 20 min)'))
-    .addSubcommand(s =>
-      s.setName('status').setDescription('📋 Veja os cooldowns das interações do seu pet')),
-
-  name: 'pet',
-  aliases: ['meu-pet', 'meupet'],
-
-  async execute(interaction) {
-    const sub = interaction.options.getSubcommand();
-    if (sub === 'brincar')   return handleBrincar(interaction);
-    if (sub === 'alimentar') return handleAlimentar(interaction);
-    if (sub === 'acariciar') return handleAcariciar(interaction);
-    if (sub === 'status')    return handleStatus(interaction);
-  },
-
-  async executePrefix(message, args) {
-    const sub = args[0]?.toLowerCase();
-    const mockInteraction = {
-      user:    message.author,
-      guildId: message.guildId,
-      guild:   message.guild,
-      deferReply: async () => { await message.channel.sendTyping().catch(() => {}); },
-      editReply:  async (payload) => message.reply(payload),
-    };
-
-    if (sub === 'brincar'   || sub === 'b') return handleBrincar(mockInteraction);
-    if (sub === 'alimentar' || sub === 'a') return handleAlimentar(mockInteraction);
-    if (sub === 'acariciar' || sub === 'c') return handleAcariciar(mockInteraction);
-    if (sub === 'status'    || sub === 's') return handleStatus(mockInteraction);
-
-    return message.reply(buildPetPanel({
-      title: '🐾 Interações de Pet',
-      body:
-        '**Subcomandos disponíveis:**\n\n' +
-         '`pet brincar` — ' + PET_BALL() + ' Brinque (+150–300 moedas, CD: 20 min)\n' +
-         '`pet alimentar` — ' + PET_FOOD() + ' Alimente (+80–160 moedas, CD: 20 min)\n' +
-         '`pet acariciar` — ' + PET_HEART() + ' Faça carinho (+40–100 moedas, CD: 20 min)\n' +
-        '`pet status` — ' + PET_TIME() + ' Ver cooldowns\n\n' +
-        'Você também pode usar os botões abaixo.',
-    }));
-  },
+  data,name:'pet',aliases:['meu-pet','meupet'],
+  async execute(i){return runAction(i,i.options.getSubcommand());},
+  async executePrefix(m,args=[]){
+    const sub=args[0]?.toLowerCase()||'painel',action=aliases[sub]??sub;
+    if(!actions.has(action))return m.reply('Use S pet, S pet ver, S pet quarto ou uma ação do painel.');
+    return runAction({user:m.author,guildId:m.guildId,guild:m.guild,deferReply:async()=>m.channel.sendTyping().catch(()=>{}),editReply:payload=>m.reply(payload)},action);
+  }
 };
