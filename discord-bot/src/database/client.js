@@ -615,4 +615,18 @@ export async function ensureTicketInviteTemplateSchema() {
   `;
 }
 
+export async function ensureReactionTriggerSchema() {
+  await prisma.$executeRaw`
+    CREATE TABLE IF NOT EXISTS "ReactionTrigger" (
+      "id" TEXT PRIMARY KEY,
+      "guildId" TEXT NOT NULL,
+      "name" TEXT NOT NULL DEFAULT '',
+      "keywords" TEXT NOT NULL,
+      "emojiId" TEXT NOT NULL,
+      "createdAt" TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP
+    )
+  `;
+  await prisma.$executeRaw`CREATE INDEX IF NOT EXISTS "ReactionTrigger_guildId_idx" ON "ReactionTrigger" ("guildId")`;
+}
+
 export default prisma;

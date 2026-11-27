@@ -36,6 +36,7 @@ import {
   payCommandFine,
 } from '../utils/commandFine.js';
 import { findMatchingTrigger, getTriggerFile, getTriggerFileName } from '../utils/messageTriggers.js';
+import { applyReactionTrigger } from '../utils/reactionTriggers.js';
 import {
   checkMessageSpam,
   formatRetryAfter,
@@ -461,7 +462,13 @@ export default {
       // ── GATILHOS DE MENSAGEM ──────────────────────────────────────────────
       // A consulta sempre usa o guildId da mensagem; um gatilho nunca vaza
       // para outro servidor. Bots são filtrados no início deste handler.
-      if (!botMentioned && !repliedToBot && await handleMessageTrigger(message)) return;
+      if (!botMentioned && !repliedToBot) {
+        // Reagir não consome a mensagem nem impede o gatilho de mídia ou comandos.
+        await applyReactionTrigger(message).catch(error => {
+          console.warn('[GATILHO REAÇÃO]', error?.code ?? error?.message ?? error);
+        });
+        if (await handleMessageTrigger(message)) return;
+      }
 
       // ── CONTROLE ADMINISTRATIVO POR MENÇÃO ─────────────────────────────────
       // Administradores ainda podem acionar comandos naturais mencionando o bot.

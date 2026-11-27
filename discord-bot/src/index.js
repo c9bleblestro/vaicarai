@@ -18,7 +18,7 @@ if (process.env.REPL_ID && !railwayMarkers.length) {
 
 import { Client, GatewayIntentBits, Partials, Collection } from 'discord.js';
 import { loadCommands } from './utils/loader.js';
-import { ensureCallRankSchema, ensureMarriageSchema, ensureChatLevelSchema, ensureInteractionStreakSchema, ensureTicketInviteTemplateSchema } from './database/client.js';
+import { ensureCallRankSchema, ensureMarriageSchema, ensureChatLevelSchema, ensureInteractionStreakSchema, ensureTicketInviteTemplateSchema, ensureReactionTriggerSchema } from './database/client.js';
 import { ensureCommandFine } from './utils/commandFine.js';
 import { applyRequestedCoupleStreakAdjustment } from './utils/interactionStreakAdjustment.js';
 import { readdirSync } from 'fs';
@@ -79,6 +79,7 @@ process.on('uncaughtException',  err    => console.error('[UNCAUGHT EXCEPTION]',
     await ensureChatLevelSchema();
     await ensureInteractionStreakSchema();
     await ensureTicketInviteTemplateSchema();
+    await ensureReactionTriggerSchema();
     // Ajuste administrativo pontual; nunca impede a inicialização do bot.
     try { await applyRequestedCoupleStreakAdjustment(); }
     catch (error) { console.warn('[FOGUINHO AJUSTE]', error?.message ?? error); }
