@@ -105,12 +105,17 @@ async function runAction(i,action,{petId=null,legacy=false,previousView='room'}=
   return deliver(await buildWorldPayload(result,{owner:userId,guild:i.guild,view,action:theme?'idle':action,notice}));
 }
 const actions=new Set(['painel','ver','quarto','status','brincar','alimentar','acariciar','banho','dormir','aventura','coletar','tema_neon','tema_rose','tema_moon']);
+const pendingPanels=new Set();
 export async function handlePetButton(i){
   const [,action,owner,petId,viewCode]=i.customId.split(':');
   if(!actions.has(action))return i.reply({content:'Ação de pet inválida.',flags:privateFlag});
   if(owner&&owner!==i.user.id)return i.reply({content:'Este quartinho pertence a outro membro. Use S pet para abrir o seu.',flags:privateFlag});
   // Older shop panels had unbound buttons. Open a private panel instead of editing another member's message.
-  return runAction(i,action,{petId,legacy:!owner,previousView:viewCode==='p'?'portrait':'room'});
+  const key=i.guildId+':'+i.message.id+':'+i.user.id;
+  if(pendingPanels.has(key))return i.reply({content:'Seu pet ainda está reagindo à última ação. Tente novamente em instantes.',flags:privateFlag});
+  pendingPanels.add(key);
+  try{return await runAction(i,action,{petId,legacy:!owner,previousView:viewCode==='p'?'portrait':'room'});}
+  finally{pendingPanels.delete(key);}
 }
 const descriptions={
   painel:'Abra o quartinho animado e interaja com seu pet',
