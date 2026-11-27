@@ -5,6 +5,8 @@ import {parseGIF,decompressFrames} from 'gifuct-js';
 import prisma from '../src/database/client.js';
 import {getPetWorld,changePetWorld,petStats,petLevel,petCooldown,MINUTE} from '../src/utils/petLife.js';
 import {decodePetSprite,renderPetWorld} from '../src/utils/petWorldArt.js';
+import {getPetIllustration,validatePetIllustrations} from '../src/utils/petIllustrationPack.js';
+import {migratePetCatalogForGuild} from '../src/utils/petCatalogV2.js';
 const sample={careAt:new Date(100000),fullness:90,happiness:90,energy:90,hygiene:90,bond:10};
 test('life decay is bounded, persistent bond and levels are independent',()=>{
   const s=petStats(sample,100000+100*3600000);
@@ -53,6 +55,55 @@ test('same-pet parallel actions and theme purchases cannot double-pay; adventure
     const loot=await Promise.all([changePetWorld(finish),changePetWorld(finish)]);
     assert.equal(loot.filter(r=>r.ok).length,1);
     const final=await getPetWorld(userId,guildId);assert.equal(final.eco.balance,620);assert.equal(final.life.xp,32);
+  }finally{
+    await prisma.petLife.deleteMany({where:{userId,guildId}});
+    await prisma.userPurchase.deleteMany({where:{userId}});
+    await prisma.userProfile.deleteMany({where:{userId}});
+    await prisma.economy.deleteMany({where:{userId,guildId}});
+    await prisma.pet.deleteMany({where:{guildId}});
+    await prisma.$disconnect();
+  }
+});
+
+test('illustrated catalog serves the actual four GIF files without the old renderer',async()=>{
+  assert.equal(validatePetIllustrations(),true);
+  for(const species of ['luna','koda']){
+    const pet={id:'pw2-'+species+'-test',name:species,emoji:'🐾'};
+    for(const view of ['portrait','room']){
+      const original=getPetIllustration(pet.id,view);
+      const art=await renderPetWorld(pet,{theme:'neon',view,action:'idle'});
+      assert.equal(art.illustrated,true);
+      assert.equal(art.ext,'gif');
+      assert.deepEqual(art.buffer,original);
+      const frames=await decodePetSprite(original);
+      assert.ok(frames.length>=4);
+    }
+    const art=await renderPetWorld(pet,{theme:'neon',view:'room',action:'acariciar'});
+    assert.equal(art.illustrated,true);assert.equal(art.ext,'gif');
+    assert.ok(art.buffer.length<=8*1024*1024);
+  }
+});
+test('catalog migration retires old pets and transfers ownership and progression exactly once',async()=>{
+  const userId='pet-v2-owner-'+Date.now(),guildId='pet-v2-guild-'+Date.now();
+  try{
+    const old=await prisma.pet.create({data:{guildId,name:'Pet antigo',emoji:'🐱',price:100}});
+    await prisma.userPurchase.create({data:{userId,guildId,itemType:'pet',itemRef:old.id}});
+    await prisma.userProfile.create({data:{userId,guildId,activePet:old.id}});
+    await prisma.economy.create({data:{userId,guildId,balance:2345,bank:6789}});
+    await prisma.petLife.create({data:{userId,guildId,petId:old.id,xp:321,bond:72,room:'rose',ownedRooms:'neon,rose'}});
+    const res=await migratePetCatalogForGuild(guildId,prisma);
+    assert.equal(res.retired,1);assert.equal(res.owners,1);
+    const live=await prisma.pet.findMany({where:{guildId,active:true}});
+    assert.deepEqual(live.map(p=>p.id).sort(),['pw2-koda-'+guildId,'pw2-luna-'+guildId]);
+    assert.equal((await prisma.pet.findUnique({where:{id:old.id}})).active,false);
+    assert.equal(await prisma.userPurchase.count({where:{userId,itemType:'pet'}}),2);
+    assert.equal(await prisma.userPurchase.count({where:{userId,itemType:'pet_legacy'}}),1);
+    const world=await getPetWorld(userId,guildId);
+    assert.equal(world.pet.id,'pw2-luna-'+guildId);assert.equal(world.life.xp,321);assert.equal(world.life.bond,72);
+    assert.equal(world.life.room,'rose');assert.equal(world.eco.balance,2345);assert.equal(world.eco.bank,6789);
+    await migratePetCatalogForGuild(guildId,prisma);
+    assert.equal(await prisma.userPurchase.count({where:{userId,itemType:'pet'}}),2);
+    assert.equal((await getPetWorld(userId,guildId)).life.xp,321);
   }finally{
     await prisma.petLife.deleteMany({where:{userId,guildId}});
     await prisma.userPurchase.deleteMany({where:{userId}});
