@@ -80,6 +80,11 @@ test('illustrated catalog serves the actual four GIF files without the old rende
       const frames=await decodePetSprite(original);
       assert.ok(frames.length>=100);
       assert.ok(frames.reduce((sum,f)=>sum+f.delay,0)>=5500);
+      if(view==='portrait'){
+        assert.ok(frames.every(f=>f.image.getContext('2d').getImageData(0,0,1,1).data[3]===0));
+        const decoded=decompressFrames(parseGIF(original.buffer.slice(original.byteOffset,original.byteOffset+original.byteLength)),true);
+        assert.ok(decoded.every(f=>f.disposalType===2));
+      }
     }
     const art=await renderPetWorld(pet,{theme:'neon',view:'room',action:'acariciar'});
     assert.equal(art.illustrated,true);assert.equal(art.ext,'gif');
