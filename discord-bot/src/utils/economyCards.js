@@ -1,8 +1,9 @@
-import { createCanvas, loadImage, GlobalFonts } from '@napi-rs/canvas';
+import { createCanvas, loadImage, GlobalFonts, GifEncoder } from '@napi-rs/canvas';
 import { fileURLToPath } from 'url';
 import { dirname, join } from 'path';
 import { readFileSync } from 'fs';
 import { drawAvatarRing } from './shopData.js';
+import {timeLeft,dailyMilestones,workProgressValue} from './economyProgress.js';
 
 const __ecoFilename = fileURLToPath(import.meta.url);
 const __ecoDir      = dirname(__ecoFilename);
@@ -1037,7 +1038,8 @@ function drawWalletTemplateValue(ctx, value, y) {
 }
 
 // ─── Wallet card using the supplied artwork as the fixed design ───────────────
-export async function generateBalanceCard({ username, avatarUrl, balance, bank }) {
+export async function generateBalanceCard({ username, avatarUrl, balance, bank, dashboard=null, ...style }) {
+  if(dashboard)return generateWalletDashboard({username,avatarUrl,balance,bank,dashboard,...style});
   const W = 1024;
   const H = 1536;
   const canvas = createCanvas(W, H);
@@ -1986,4 +1988,156 @@ export function generateRouletteCard({ spin, escolha, won, bet, winAmt, userBala
   );
 
   return canvas.toBuffer('image/png');
+}
+
+
+// Shared Substancy economy visual identity. Actual amounts are rendered at request time.
+const ECO_PALETTES={
+  daily:['#38233e','#985e89','#ffd0e8','#fff1f7'],
+  weekly:['#25243f','#716eb6','#cdc9ff','#f7f5ff'],
+  monthly:['#38243b','#ab7256','#ffdb91','#fff4db'],
+  work:['#1c3437','#488a83','#aee6db','#eafffa'],
+  wallet:['#242139','#634867','#f6b9da','#fff4f9']
+};
+const validColor=(c,f)=>typeof c==='string'&&/^#[0-9a-f]{6}$/i.test(c)?c:f;
+function econText(ctx,str,x,y,size,color,width=1000,bold=true,align='left'){
+  ctx.save();ctx.textAlign=align;ctx.fillStyle=color;let n=size;str=String(str??'');
+  ctx.font=(bold?'bold ':'')+n+'px '+FONT;
+  while(n>12&&ctx.measureText(str).width>width){ctx.font=(bold?'bold ':'')+(--n)+'px '+FONT;}
+  ctx.fillText(truncateText(ctx,str,width),x,y);ctx.restore();
+}
+function econPanel(ctx,x,y,w,h,fill,stroke,r=20){
+  ctx.save();ctx.shadowColor='#140c253b';ctx.shadowBlur=12;ctx.shadowOffsetY=5;
+  roundRect(ctx,x,y,w,h,r);ctx.fillStyle=fill;ctx.fill();ctx.restore();
+  roundRect(ctx,x,y,w,h,r);ctx.strokeStyle=stroke;ctx.lineWidth=1.3;ctx.stroke();
+}
+function econBackdrop(ctx,w,h,palette){
+  const g=ctx.createLinearGradient(0,0,w,h);g.addColorStop(0,palette[0]);g.addColorStop(1,palette[1]);ctx.fillStyle=g;ctx.fillRect(0,0,w,h);
+  for(const [x,y,r] of [[w*.8,h*.1,w*.48],[w*.15,h*.85,w*.35]]){
+    const g=ctx.createRadialGradient(x,y,0,x,y,r);g.addColorStop(0,palette[2]+'44');g.addColorStop(1,palette[2]+'00');ctx.fillStyle=g;ctx.fillRect(0,0,w,h);
+  }
+  ctx.save();ctx.globalAlpha=.45;
+  for(let i=0;i<30;i++){const x=12+(i*97)%(w-24),y=12+(i*53)%(h-24);drawSparkle(ctx,x,y,i%5===0?8:3,palette[2]);}
+  ctx.restore();
+  roundRect(ctx,8,8,w-16,h-16,26);ctx.strokeStyle=palette[2]+'80';ctx.lineWidth=1.5;ctx.stroke();
+}
+function chest(ctx,x,y,s,p,phase,opened=true){
+  ctx.save();ctx.translate(x,y);ctx.scale(s,s);
+  const lift=opened?8+3*Math.sin(phase*Math.PI*2):0;
+  ctx.fillStyle='#17132655';ctx.beginPath();ctx.ellipse(0,61,100,13,0,0,Math.PI*2);ctx.fill();
+  // Silver/gold edged treasure chest with separate lid, leather, rivets and lock.
+  const body=ctx.createLinearGradient(-90,0,90,60);body.addColorStop(0,p[1]);body.addColorStop(.55,p[0]);body.addColorStop(1,p[1]);
+  econPanel(ctx,-89,-8,178,70,body,p[2],13);
+  for(const sx of [-63,47]){ctx.fillStyle=p[2];roundRect(ctx,sx,-8,16,70,5);ctx.fill();}
+  if(opened){
+    const glow=ctx.createRadialGradient(0,-26,4,0,-26,105);glow.addColorStop(0,p[2]+'99');glow.addColorStop(1,p[2]+'00');ctx.fillStyle=glow;ctx.fillRect(-105,-131,210,210);
+    for(let i=0;i<5;i++)drawCoinIcon(ctx,-49+i*24,-15-(i%2)*9,15);
+  }
+  ctx.save();ctx.translate(0,-lift);
+  const lid=ctx.createLinearGradient(0,-60,0,-5);lid.addColorStop(0,p[3]);lid.addColorStop(.32,p[1]);lid.addColorStop(1,p[0]);
+  econPanel(ctx,-96,opened?-67:-45,192,opened?34:43,lid,p[2],12);
+  for(const sx of [-68,50]){ctx.fillStyle=p[2];roundRect(ctx,sx,opened?-67:-45,18,opened?34:43,4);ctx.fill();}
+  ctx.restore();
+  econPanel(ctx,-17,5,34,35,p[2],p[3],8);ctx.fillStyle=p[0];ctx.beginPath();ctx.arc(0,18,5,0,Math.PI*2);ctx.fill();ctx.fillRect(-2,18,4,10);
+  ctx.restore();
+}
+function gift(ctx,x,y,s,p,phase){
+  ctx.save();ctx.translate(x,y+Math.sin(phase*Math.PI*2)*3);ctx.scale(s,s);
+  econPanel(ctx,-66,-28,132,91,p[1],p[2],14);econPanel(ctx,-73,-49,146,27,p[2],p[3],8);
+  ctx.fillStyle=p[3];ctx.fillRect(-10,-48,20,110);ctx.strokeStyle=p[3];ctx.lineWidth=8;
+  for(const side of [-1,1]){ctx.beginPath();ctx.moveTo(0,-51);ctx.bezierCurveTo(side*80,-100,side*65,-48,0,-51);ctx.stroke();}
+  ctx.restore();
+}
+function workSymbol(ctx,x,y,s,key,p){
+  ctx.save();ctx.translate(x,y);ctx.scale(s,s);
+  if(key==='entregador'){
+    ctx.fillStyle='#f5b765';ctx.beginPath();ctx.arc(0,0,56,0,Math.PI*2);ctx.fill();ctx.fillStyle='#ffe3a4';ctx.beginPath();ctx.arc(0,0,48,0,Math.PI*2);ctx.fill();
+    for(let i=0;i<6;i++){ctx.fillStyle='#bd6471';ctx.beginPath();ctx.arc(Math.cos(i*Math.PI/3)*29,Math.sin(i*Math.PI/3)*29,10,0,Math.PI*2);ctx.fill();}
+  }else if(key==='freelancer'){
+    econPanel(ctx,-65,-53,130,88,p[0],p[2],12);ctx.fillStyle=p[2];ctx.fillRect(-50,-38,100,57);econPanel(ctx,-80,36,160,16,p[1],p[2],5);econText(ctx,'< />',0,2,31,p[0],90,true,'center');
+  }else if(key==='investidor'){
+    for(let i=0;i<4;i++){ctx.fillStyle=p[2];roundRect(ctx,-54+i*29,43-[23,48,35,85][i],20,[23,48,35,85][i],5);ctx.fill();}
+    ctx.strokeStyle=p[3];ctx.lineWidth=5;ctx.beginPath();ctx.moveTo(-60,0);ctx.lineTo(-25,-35);ctx.lineTo(7,-22);ctx.lineTo(54,-69);ctx.stroke();
+  }else{
+    econPanel(ctx,-65,-36,130,88,p[1],p[2],12);ctx.strokeStyle=p[2];ctx.lineWidth=9;roundRect(ctx,-23,-58,46,25,8);ctx.stroke();ctx.fillStyle=p[2];roundRect(ctx,-65,-4,130,11,5);ctx.fill();if(key==='magnata')drawCrown(ctx,0,21,49);
+  }
+  ctx.restore();
+}
+function drawRewardFrame(ctx,kind,data,phase,w=720,h=380){
+  const p=ECO_PALETTES[kind]??ECO_PALETTES.work;econBackdrop(ctx,w,h,p);
+  const titles={daily:'Daily Rewards',weekly:'Baú semanal',monthly:'Baú mensal',work:'Central de trabalho'};
+  econText(ctx,'SUBSTANCY  /  ECONOMIA',30,40,13,p[2],430,false);
+  econText(ctx,titles[kind],30,88,38,p[3],460);
+  const claimed=data.amount!=null;
+  econText(ctx,claimed?'RECOMPENSA RECEBIDA':data.subtitle??'PRÓXIMA RECOMPENSA',32,126,14,p[2],390,false);
+  econText(ctx,claimed?'+'+fmt(data.amount)+' coins':data.status??'Disponível',30,181,claimed?44:32,p[3],425);
+  if(kind==='daily')gift(ctx,570,151,1.1,p,phase);
+  else if(kind==='weekly'||kind==='monthly')chest(ctx,570,150,1.05,p,phase,claimed);
+  else workSymbol(ctx,570,151,1.13,data.job,p);
+  if(claimed){
+    for(let i=0;i<8;i++){const a=(phase+i/8)%1;const x=490+(i*31)%188+Math.sin(a*Math.PI*2+i)*12,y=68+(i*19)%132-12*Math.sin(a*Math.PI*2);ctx.save();ctx.globalAlpha=.4+.5*Math.sin(a*Math.PI)**2;drawSparkle(ctx,x,y,7+(i%3)*2,p[3]);ctx.restore();}
+  }
+  if(kind==='daily'){
+    const streak=data.streak??0,day=streak?((streak-1)%7)+1:0;
+    econText(ctx,'Sequência: '+streak+' dias  /  bônus de '+(data.bonus??0)+'%',30,228,17,p[3],660);
+    for(let i=1;i<=7;i++){
+      const x=30+(i-1)*95;econPanel(ctx,x,246,86,65,i<=day?p[2]:p[0]+'bb',p[2]+'99',12);
+      econText(ctx,i<=day?'✓':String(i),x+43,280,26,i<=day?p[0]:p[3],76,true,'center');
+      econText(ctx,'DIA '+i,x+43,301,11,i<=day?p[0]:p[2],75,false,'center');
+    }
+    econText(ctx,dailyMilestones(streak).map(m=>(m.achieved?'✓ ':'○ ')+m.day+' dias').join('     '),30,347,16,p[3],660,false);
+  }else{
+    econPanel(ctx,30,239,660,102,p[0]+'bb',p[2]+'88',18);
+    econText(ctx,data.detail??(kind==='weekly'?'Recompensa a cada 7 dias':'Recompensa a cada 30 dias'),49,278,21,p[3],620);
+    econText(ctx,data.footer??'Coins adicionados à carteira',49,312,16,p[2],620,false);
+  }
+}
+export function generateEconomyRewardArt(kind,data={},animated=false){
+  const W=720,H=380,c=createCanvas(W,H),ctx=c.getContext('2d');
+  if(!animated){drawRewardFrame(ctx,kind,data,0,W,H);return c.toBuffer('image/png');}
+  const enc=new GifEncoder(W,H,{repeat:0,quality:8});
+  try{
+    // 30 genuine frames / 1.2 seconds, then a short readable hold.
+    for(let i=0;i<30;i++){
+      drawRewardFrame(ctx,kind,data,i/30,W,H);
+      const rgba=ctx.getImageData(0,0,W,H).data;enc.addFrame(new Uint8Array(rgba.buffer,rgba.byteOffset,rgba.byteLength),W,H,{delay:i===29?640:40});
+    }
+    const gif=enc.finish();if(gif.length<=8*1024*1024)return gif;
+  }finally{enc.dispose();}
+  drawRewardFrame(ctx,kind,data,0,W,H);return c.toBuffer('image/png');
+}
+async function generateWalletDashboard({username,avatarUrl,balance,bank,dashboard,cardBg1,cardBg2,cardPanelColor,walletRing,walletRingBorder,walletBg}){
+  const W=900,H=760,c=createCanvas(W,H),ctx=c.getContext('2d'),p=[...ECO_PALETTES.wallet];
+  p[0]=validColor(cardBg1,p[0]);p[1]=validColor(cardBg2,p[1]);econBackdrop(ctx,W,H,p);
+  // Keep the user-selected background as an actual background, with readable panels.
+  if(walletBg&&/^https?:\/\//i.test(walletBg)){
+    try{const ctrl=new AbortController(),timer=setTimeout(()=>ctrl.abort(),3500);try{const r=await fetch(walletBg,{signal:ctrl.signal});if(r.ok){const bytes=Buffer.from(await r.arrayBuffer());if(bytes.length<=8*1024*1024){const im=await loadImage(bytes);const scale=Math.max(W/im.width,H/im.height);ctx.drawImage(im,(W-im.width*scale)/2,(H-im.height*scale)/2,im.width*scale,im.height*scale);ctx.fillStyle='#16101fa8';ctx.fillRect(0,0,W,H);}}}finally{clearTimeout(timer);}}catch{}
+  }
+  const panel=validColor(cardPanelColor,'#2b233c'),ink='#fff4f9',accent=p[2];
+  const av=await loadAvatarImg(avatarUrl,256),cx=91,cy=89,r=45;
+  ctx.strokeStyle=validColor(walletRingBorder,accent);ctx.lineWidth=4;ctx.beginPath();ctx.arc(cx,cy,r+5,0,Math.PI*2);ctx.stroke();
+  if(walletRing)await drawAvatarRing(ctx,cx,cy,r+4,walletRing);
+  ctx.save();ctx.beginPath();ctx.arc(cx,cy,r,0,Math.PI*2);ctx.clip();if(av)ctx.drawImage(av,cx-r,cy-r,r*2,r*2);else drawAvatarFallback(ctx,cx-r,cy-r,r*2,username);ctx.restore();
+  econText(ctx,'SUBSTANCY BANK',157,64,15,accent,680,false);
+  econText(ctx,username??'Usuário',155,105,34,ink,660);
+  econText(ctx,'Sua central financeira',157,130,16,ink,660,false);
+  const values=[['CARTEIRA',balance],['BANCO',bank],['PATRIMÔNIO TOTAL',Number(balance||0)+Number(bank||0)]];
+  values.forEach(([label,n],i)=>{const x=28+i*284;econPanel(ctx,x,159,276,116,panel,accent+'88');econText(ctx,label,x+18,193,14,accent,242,false);econText(ctx,fmt(n),x+18,237,36,ink,240);econText(ctx,'coins',x+19,258,13,accent,240,false);});
+  econText(ctx,'Recompensas e atividades',30,324,25,ink,820);
+  for(const [i,item] of (dashboard.status??[]).entries()){
+    const x=28+i%2*430,y=342+Math.floor(i/2)*91;
+    econPanel(ctx,x,y,420,80,panel,accent+'77',17);
+    ctx.fillStyle=item.ready?'#9de9be':'#d0a5cd';ctx.beginPath();ctx.arc(x+24,y+40,6,0,Math.PI*2);ctx.fill();
+    econText(ctx,item.label,x+44,y+33,20,ink,360);
+    econText(ctx,timeLeft(item.remaining),x+44,y+59,16,item.ready?'#9de9be':accent,360,false);
+  }
+  const work=workProgressValue(dashboard.workXp),streak=dashboard.streak??0;
+  econPanel(ctx,28,540,420,182,panel,accent+'88');econPanel(ctx,458,540,414,182,panel,accent+'88');
+  econText(ctx,'Sequência diária',47,574,21,ink,380);econText(ctx,streak+' dias',47,622,36,accent,380);econText(ctx,'Bônus atual: '+Math.min(streak,30)*2+'%',47,651,16,ink,380,false);
+  econText(ctx,dailyMilestones(streak).map(m=>(m.achieved?'✓ ':'○ ')+m.day+'d').join('   '),47,690,17,accent,380,false);
+  econText(ctx,'Carreira',477,574,21,ink,380);econText(ctx,'Nível '+work.level+' / 10',477,622,34,accent,380);
+  roundRect(ctx,478,648,365,12,6);ctx.fillStyle='#ffffff33';ctx.fill();
+  if(work.progress>0){ctx.save();roundRect(ctx,478,648,365,12,6);ctx.clip();ctx.fillStyle=accent;ctx.fillRect(478,648,365*work.progress,12);ctx.restore();}
+  econText(ctx,(dashboard.workXp??0)+' XP trabalhista',477,690,17,ink,380,false);
+  return c.toBuffer('image/png');
 }
