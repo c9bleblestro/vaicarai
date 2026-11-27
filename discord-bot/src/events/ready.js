@@ -6,6 +6,7 @@ import { startDeathEventScheduler } from '../utils/deathEvent.js';
 import { startBumpReminderScheduler } from '../utils/bumpReminder.js';
 import { configuredBoostRoleIds, syncBoostRoles } from '../utils/boostRoles.js';
 import { startCallRankScheduler } from '../utils/callRank.js';
+import { startCommunityRadioScheduler } from '../utils/communityRadio.js';
 import { syncOpenTicketMediaPermissions } from '../utils/ticketPermissions.js';
 
 // ─── VIP expirado ─────────────────────────────────────────────────────────────
@@ -129,6 +130,7 @@ export default {
     startDeathEventScheduler(client);
     startBumpReminderScheduler(client);
     startCallRankScheduler(client);
+    startCommunityRadioScheduler(client);
     syncOpenTicketMediaPermissions(client).catch(error => {
       console.warn('[TICKET MÍDIA] Falha na sincronização inicial:', error?.message ?? error);
     });

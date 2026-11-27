@@ -842,3 +842,15 @@ model ReactionTrigger {
 
   @@index([guildId])
 }
+
+
+model CommunityRadio {
+  guildId String @id
+  voiceChannelId String
+  textChannelId String
+  panelMessageId String?
+  station String @default("auto")
+  djRoleId String?
+  enabled Boolean @default(false)
+  queue Json @default("[]")
+}

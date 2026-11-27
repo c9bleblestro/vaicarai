@@ -1,3 +1,4 @@
+import { isFmVoiceReserved } from './fmVoiceGuard.js';
 import { spawn } from 'child_process';
 import {
   createAudioPlayer,
@@ -262,6 +263,7 @@ export const radioSessions = new Map();
 // ─── Factory: conecta ao canal e cria sessão ──────────────────────────────────
 
 export async function createRadioSession({ guild, channelId, playlistKey }) {
+  if (isFmVoiceReserved(guild.id)) return null;
   const existing = radioSessions.get(guild.id);
   if (existing) {
     existing._stopped    = true;
@@ -280,6 +282,7 @@ export async function createRadioSession({ guild, channelId, playlistKey }) {
 
   console.log(`[RADIO] Conectando ao canal ${channelId}...`);
 
+  if (isFmVoiceReserved(guild.id)) return null;
   const connection = joinVoiceChannel({
     channelId,
     guildId:        guild.id,

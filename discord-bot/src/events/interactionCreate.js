@@ -105,6 +105,7 @@ import {
   handleMinesCashout,
 } from '../utils/gameHandlers.js';
 import { handleAjudaCatSel } from '../commands/general/ajuda.js';
+import { handleFmInteraction } from '../commands/general/fm.js';
 import { radioSessions, createRadioSession } from '../utils/radioManager.js';
 import { buildControlPanel as buildRadioPanel } from '../commands/general/radio.js';
 import { musicSessions } from '../utils/musicManager.js';
@@ -625,6 +626,7 @@ export default {
         }
       }
 
+      if ((interaction.isButton() || interaction.isModalSubmit() || interaction.isStringSelectMenu() || interaction.isUserSelectMenu()) && interaction.customId.startsWith('fm:')) return handleFmInteraction(interaction);
       if (interaction.isButton() && await handleDeathEventInteraction(interaction, client)) return;
       if (interaction.isButton() && interaction.customId.startsWith('foguinho_page:')) {
         return await handleStreakCollectionPage(interaction);

@@ -1,3 +1,4 @@
+import { isFmVoiceReserved } from './fmVoiceGuard.js';
 import playdl from 'play-dl';
 import {
   createAudioPlayer,
@@ -239,6 +240,7 @@ export class MusicSession {
 
 // ─── Factory: conecta ao canal de voz e cria sessão ──────────────────────────
 export async function createMusicSession({ guild, channelId }) {
+  if (isFmVoiceReserved(guild.id)) return null;
   const existing = musicSessions.get(guild.id);
   if (existing) {
     existing._stopped = true;
@@ -252,6 +254,7 @@ export async function createMusicSession({ guild, channelId }) {
     await new Promise(r => setTimeout(r, 600));
   }
 
+  if (isFmVoiceReserved(guild.id)) return null;
   const connection = joinVoiceChannel({
     channelId,
     guildId:        guild.id,
