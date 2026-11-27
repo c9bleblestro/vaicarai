@@ -37,6 +37,13 @@ export function getApprovedIdle(key){
     let raw;
     try{raw=readFileSync(new URL('../assets/pet-world/approved-animations.json.gz',import.meta.url));}
     catch(error){if(error.code!=='ENOENT')throw error;}
+    // The GitHub transfer gateway rejected the complete 3.78 MB blob.
+    // Reassemble ten lossless binary slices committed atomically with this loader.
+    if(!raw){
+      const parts=Array.from({length:10},(_,i)=>readFileSync(new URL('../assets/pet-world/approved-animations.parts/'+String(i).padStart(2,'0')+'.part',import.meta.url)));
+      raw=Buffer.concat(parts);
+      if(raw.length!==3781216||createHash('sha256').update(raw).digest('hex')!=='a37e788ba29be1b1c1eac60d6100fe91094dae5677aa9f94075b318101e8f859')throw Error('Approved animation pack integrity mismatch');
+    }
     const next=new Map();
     if(raw){
       const data=JSON.parse(gunzipSync(raw,{maxOutputLength:8*1024*1024}).toString('utf8'));

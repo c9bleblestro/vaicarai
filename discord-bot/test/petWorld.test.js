@@ -205,11 +205,10 @@ test('adding Pimentinha to existing guild does not alter previous pets, balances
   }
 });
 
-test('approved media pack overrides only the five verified idle clips when present',async()=>{
+test('approved media pack contains and overrides exactly the five verified idle clips',async()=>{
   const keys=['luna:portrait','luna:room','koda:portrait','pimentinha:portrait','pimentinha:room'];
   const clips=keys.map(getApprovedIdle);
-  assert.ok(clips.every(Boolean)||clips.every(x=>x===null));
-  if(!clips[0])return;
+  assert.ok(clips.every(Boolean), 'All five approved GIFs must be present in the deployed repository');
   for(let i=0;i<keys.length;i++){
     const [species,view]=keys[i].split(':');
     const pet={id:'pw2-'+species+'-test'};
