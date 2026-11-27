@@ -3,6 +3,8 @@ import assert from 'node:assert/strict';
 import prisma,{ensureReactionTriggerSchema} from '../src/database/client.js';
 import { parseReactionEmojiId, matchingReactionTrigger, createReactionTrigger, deleteReactionTrigger, findMatchingReactionTrigger, applyReactionTrigger, reactionPage, buildReactionTriggerPanel, buildReactionTriggerModal } from '../src/utils/reactionTriggers.js';
 
+import {findMatchingTrigger} from '../src/utils/messageTriggers.js';
+
 const emojiId='123456789012345678';
 test('reusa palavras inteiras, normalização e frases dos gatilhos de mídia',()=>{
   const rules=[{id:'r',keywords:'bom dia\nfofo'}];
@@ -21,6 +23,8 @@ test('persistência, isolamento, reação real mockada, cooldown, exclusão e co
     await ensureReactionTriggerSchema();
     const rule=await createReactionTrigger({guildId:g,name:'Saudação',keywords:'Bom dia\nbom dia\nOlá',emojiId});
     assert.equal(rule.keywords,'bom dia\nolá');
+    const media=await prisma.messageTrigger.create({data:{guildId:g,name:'Vídeo',keywords:'bom dia',responseUrl:'https://example.invalid/video.mp4',responseName:'video.mp4'}});
+    assert.equal((await findMatchingTrigger(g,'bom dia')).id,media.id);
     const rule2=await createReactionTrigger({guildId:other,name:'Outro',keywords:'bom dia',emojiId});
     assert.equal((await findMatchingReactionTrigger(g,'BOM DIA!')).id,rule.id);
     assert.equal((await findMatchingReactionTrigger(other,'bom dia')).id,rule2.id);
@@ -42,8 +46,10 @@ test('persistência, isolamento, reação real mockada, cooldown, exclusão e co
     assert.equal(reactionPage(Array.from({length:21},(_,i)=>i),2).items[0],20);
     assert.equal((await deleteReactionTrigger(g,rule.id)).count,1);
     assert.equal(await findMatchingReactionTrigger(g,'bom dia'),null);
+    assert.equal((await findMatchingTrigger(g,'bom dia')).name,'Vídeo');
     assert.equal((await findMatchingReactionTrigger(other,'bom dia')).id,rule2.id);
   }finally{
+    await prisma.messageTrigger.deleteMany({where:{guildId:g}});
     await prisma.reactionTrigger.deleteMany({where:{guildId:{in:[g,other]}}});
     await prisma.$disconnect();
   }

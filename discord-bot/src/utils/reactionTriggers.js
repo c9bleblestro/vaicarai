@@ -70,8 +70,8 @@ export async function buildReactionTriggerPanel(guild,page=0,db=prisma){
   const rules=await listRules(guild.id,db);
   const {index,pages,items}=reactionPage(rules,page);
   const lines=items.map((r,i)=>[
-    '**'+(index*PAGE_SIZE+i+1)+'. '+escapeMarkdown(r.name||'Sem apelido')+'** • '+emojiText(guild,r.emojiId),
-    'Palavras-chave: '+escapeMarkdown(textLimit(parseTriggerKeywords(r.keywords).join(', '),160)),
+    '**'+(index*PAGE_SIZE+i+1)+'. '+textLimit(escapeMarkdown(r.name||'Sem apelido'),100)+'** • '+emojiText(guild,r.emojiId),
+    'Palavras-chave: '+textLimit(escapeMarkdown(parseTriggerKeywords(r.keywords).join(', ')),160),
   ].join('\n'));
   const c=new ContainerBuilder().addTextDisplayComponents(new TextDisplayBuilder().setContent([
     '## Gatilhos de reação',
