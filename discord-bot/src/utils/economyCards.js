@@ -2023,20 +2023,23 @@ function econBackdrop(ctx,w,h,palette){
 }
 function chest(ctx,x,y,s,p,phase,opened=true){
   ctx.save();ctx.translate(x,y);ctx.scale(s,s);
-  const lift=opened?8+3*Math.sin(phase*Math.PI*2):0;
+  const open=opened?Math.min(1,phase*3.5):0, eased=open*open*(3-2*open);
+  const lift=27*eased;
   ctx.fillStyle='#17132655';ctx.beginPath();ctx.ellipse(0,61,100,13,0,0,Math.PI*2);ctx.fill();
   // Silver/gold edged treasure chest with separate lid, leather, rivets and lock.
   const body=ctx.createLinearGradient(-90,0,90,60);body.addColorStop(0,p[1]);body.addColorStop(.55,p[0]);body.addColorStop(1,p[1]);
   econPanel(ctx,-89,-8,178,70,body,p[2],13);
   for(const sx of [-63,47]){ctx.fillStyle=p[2];roundRect(ctx,sx,-8,16,70,5);ctx.fill();}
-  if(opened){
+  if(opened&&eased>.05){
+    ctx.save();ctx.globalAlpha=eased;
     const glow=ctx.createRadialGradient(0,-26,4,0,-26,105);glow.addColorStop(0,p[2]+'99');glow.addColorStop(1,p[2]+'00');ctx.fillStyle=glow;ctx.fillRect(-105,-131,210,210);
     for(let i=0;i<5;i++)drawCoinIcon(ctx,-49+i*24,-15-(i%2)*9,15);
+    ctx.restore();
   }
   ctx.save();ctx.translate(0,-lift);
   const lid=ctx.createLinearGradient(0,-60,0,-5);lid.addColorStop(0,p[3]);lid.addColorStop(.32,p[1]);lid.addColorStop(1,p[0]);
-  econPanel(ctx,-96,opened?-67:-45,192,opened?34:43,lid,p[2],12);
-  for(const sx of [-68,50]){ctx.fillStyle=p[2];roundRect(ctx,sx,opened?-67:-45,18,opened?34:43,4);ctx.fill();}
+  econPanel(ctx,-96,-45-22*eased,192,43-9*eased,lid,p[2],12);
+  for(const sx of [-68,50]){ctx.fillStyle=p[2];roundRect(ctx,sx,-45-22*eased,18,43-9*eased,4);ctx.fill();}
   ctx.restore();
   econPanel(ctx,-17,5,34,35,p[2],p[3],8);ctx.fillStyle=p[0];ctx.beginPath();ctx.arc(0,18,5,0,Math.PI*2);ctx.fill();ctx.fillRect(-2,18,4,10);
   ctx.restore();
@@ -2110,10 +2113,13 @@ async function generateWalletDashboard({username,avatarUrl,balance,bank,dashboar
   const W=900,H=760,c=createCanvas(W,H),ctx=c.getContext('2d'),p=[...ECO_PALETTES.wallet];
   p[0]=validColor(cardBg1,p[0]);p[1]=validColor(cardBg2,p[1]);econBackdrop(ctx,W,H,p);
   // Keep the user-selected background as an actual background, with readable panels.
-  if(walletBg&&/^https?:\/\//i.test(walletBg)){
-    try{const ctrl=new AbortController(),timer=setTimeout(()=>ctrl.abort(),3500);try{const r=await fetch(walletBg,{signal:ctrl.signal});if(r.ok){const bytes=Buffer.from(await r.arrayBuffer());if(bytes.length<=8*1024*1024){const im=await loadImage(bytes);const scale=Math.max(W/im.width,H/im.height);ctx.drawImage(im,(W-im.width*scale)/2,(H-im.height*scale)/2,im.width*scale,im.height*scale);ctx.fillStyle='#16101fa8';ctx.fillRect(0,0,W,H);}}}finally{clearTimeout(timer);}}catch{}
+  if(walletBg&&/^https:\/\/(?:cdn\.discordapp\.com|media\.discordapp\.net)\//i.test(walletBg)){
+    try{const ctrl=new AbortController(),timer=setTimeout(()=>ctrl.abort(),3500);try{const r=await fetch(walletBg,{signal:ctrl.signal,redirect:'error'});if(r.ok){const bytes=Buffer.from(await r.arrayBuffer());if(bytes.length<=8*1024*1024){const im=await loadImage(bytes);const scale=Math.max(W/im.width,H/im.height);ctx.drawImage(im,(W-im.width*scale)/2,(H-im.height*scale)/2,im.width*scale,im.height*scale);ctx.fillStyle='#16101fa8';ctx.fillRect(0,0,W,H);}}}finally{clearTimeout(timer);}}catch{}
   }
-  const panel=validColor(cardPanelColor,'#2b233c'),ink='#fff4f9',accent=p[2];
+  const panel=validColor(cardPanelColor,'#2b233c');
+  const rgb=[1,3,5].map(i=>parseInt(panel.slice(i,i+2),16));
+  const light=rgb[0]*.299+rgb[1]*.587+rgb[2]*.114>150;
+  const ink='#fff4f9',accent=p[2],panelInk=light?'#30223b':ink,panelAccent=light?'#713d66':accent;
   const av=await loadAvatarImg(avatarUrl,256),cx=91,cy=89,r=45;
   ctx.strokeStyle=validColor(walletRingBorder,accent);ctx.lineWidth=4;ctx.beginPath();ctx.arc(cx,cy,r+5,0,Math.PI*2);ctx.stroke();
   if(walletRing)await drawAvatarRing(ctx,cx,cy,r+4,walletRing);
@@ -2122,22 +2128,22 @@ async function generateWalletDashboard({username,avatarUrl,balance,bank,dashboar
   econText(ctx,username??'Usuário',155,105,34,ink,660);
   econText(ctx,'Sua central financeira',157,130,16,ink,660,false);
   const values=[['CARTEIRA',balance],['BANCO',bank],['PATRIMÔNIO TOTAL',Number(balance||0)+Number(bank||0)]];
-  values.forEach(([label,n],i)=>{const x=28+i*284;econPanel(ctx,x,159,276,116,panel,accent+'88');econText(ctx,label,x+18,193,14,accent,242,false);econText(ctx,fmt(n),x+18,237,36,ink,240);econText(ctx,'coins',x+19,258,13,accent,240,false);});
+  values.forEach(([label,n],i)=>{const x=28+i*284;econPanel(ctx,x,159,276,116,panel,accent+'88');econText(ctx,label,x+18,193,14,panelAccent,242,false);econText(ctx,fmt(n),x+18,237,36,panelInk,240);econText(ctx,'coins',x+19,258,13,panelAccent,240,false);});
   econText(ctx,'Recompensas e atividades',30,324,25,ink,820);
   for(const [i,item] of (dashboard.status??[]).entries()){
     const x=28+i%2*430,y=342+Math.floor(i/2)*91;
     econPanel(ctx,x,y,420,80,panel,accent+'77',17);
     ctx.fillStyle=item.ready?'#9de9be':'#d0a5cd';ctx.beginPath();ctx.arc(x+24,y+40,6,0,Math.PI*2);ctx.fill();
-    econText(ctx,item.label,x+44,y+33,20,ink,360);
-    econText(ctx,timeLeft(item.remaining),x+44,y+59,16,item.ready?'#9de9be':accent,360,false);
+    econText(ctx,item.label,x+44,y+33,20,panelInk,360);
+    econText(ctx,timeLeft(item.remaining),x+44,y+59,16,item.ready?(light?'#19764a':'#9de9be'):panelAccent,360,false);
   }
   const work=workProgressValue(dashboard.workXp),streak=dashboard.streak??0;
   econPanel(ctx,28,540,420,182,panel,accent+'88');econPanel(ctx,458,540,414,182,panel,accent+'88');
-  econText(ctx,'Sequência diária',47,574,21,ink,380);econText(ctx,streak+' dias',47,622,36,accent,380);econText(ctx,'Bônus atual: '+Math.min(streak,30)*2+'%',47,651,16,ink,380,false);
-  econText(ctx,dailyMilestones(streak).map(m=>(m.achieved?'✓ ':'○ ')+m.day+'d').join('   '),47,690,17,accent,380,false);
-  econText(ctx,'Carreira',477,574,21,ink,380);econText(ctx,'Nível '+work.level+' / 10',477,622,34,accent,380);
+  econText(ctx,'Sequência diária',47,574,21,panelInk,380);econText(ctx,streak+' dias',47,622,36,panelAccent,380);econText(ctx,'Bônus atual: '+Math.min(streak,30)*2+'%',47,651,16,panelInk,380,false);
+  econText(ctx,dailyMilestones(streak).map(m=>(m.achieved?'✓ ':'○ ')+m.day+'d').join('   '),47,690,17,panelAccent,380,false);
+  econText(ctx,'Carreira',477,574,21,panelInk,380);econText(ctx,'Nível '+work.level+' / 10',477,622,34,panelAccent,380);
   roundRect(ctx,478,648,365,12,6);ctx.fillStyle='#ffffff33';ctx.fill();
   if(work.progress>0){ctx.save();roundRect(ctx,478,648,365,12,6);ctx.clip();ctx.fillStyle=accent;ctx.fillRect(478,648,365*work.progress,12);ctx.restore();}
-  econText(ctx,(dashboard.workXp??0)+' XP trabalhista',477,690,17,ink,380,false);
+  econText(ctx,(dashboard.workXp??0)+' XP trabalhista',477,690,17,panelInk,380,false);
   return c.toBuffer('image/png');
 }
