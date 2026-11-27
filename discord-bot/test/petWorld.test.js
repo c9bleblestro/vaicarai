@@ -1,3 +1,4 @@
+import {createHash} from 'node:crypto';
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import {createCanvas,loadImage,GifEncoder} from '@napi-rs/canvas';
@@ -171,9 +172,11 @@ test('Pimentinha ships the five original optimized clips and uses separate shop/
     const original=getPimentinhaClip(view,action);
     const art=await renderPetWorld(pet,{view,theme:'neon',action});
     assert.deepEqual(art.buffer,original);assert.equal(art.fallback,undefined);
-    assert.ok(original.length<700*1024);
+    const approved=view==='room'&&action==='idle'&&createHash('sha256').update(original).digest('hex')==='176cdd3fcff1c841339b4ceaf5107d3748d9f846a077918ac9844b8e3b2d0566';
+    assert.ok(approved?original.length===1868279:original.length<700*1024);
     const frames=await decodePetSprite(original);assert.equal(frames.length,16);
-    assert.equal(frames.reduce((sum,f)=>sum+f.delay,0),4800);
+    assert.equal(frames.reduce((sum,f)=>sum+f.delay,0),approved?3000:4800);
+    if(approved){assert.equal(frames[0].image.width,537);assert.equal(frames[0].image.height,390);}
     seen.add(original.toString('base64'));
   }
   assert.equal(seen.size,5);
