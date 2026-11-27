@@ -47,7 +47,7 @@ function timeout(promise,ms){let timer;return Promise.race([promise,new Promise(
 export async function createFmRequestItem({userId,name,query,recipientName=null,message='',anonymous=false,opening=false},resolve=resolveFmTrack){
   if(!validQuery(query))throw new Error('Use um nome ou link HTTPS do SoundCloud, YouTube ou Spotify.');
   let info;
-  try{info=await timeout(resolve(query.trim()),85000);}catch(error){throw new Error(error?.message||'Não encontrei uma faixa disponível. Tente outro nome ou link.');}
+  try{info=await timeout(resolve(query.trim()),125000);}catch(error){if(error?.suggestions?.length)throw error;throw new Error(error?.message||'Não encontrei uma faixa disponível. Tente outro nome ou link.');}
   if(!validTrackUrl(info.url))throw new Error('A busca não retornou uma fonte de áudio compatível.');
   if(durationSeconds(info.duration)>900)throw new Error('Escolha uma faixa de até 15 minutos.');
   return {id:randomUUID(),requesterId:userId,requesterName:clip(name,80),recipientName:recipientName?clip(recipientName,80):null,
@@ -191,7 +191,8 @@ export class CommunityRadioSession {
       await this.mutateQueue(q=>{checkQueueLimit(q,userId);return {queue:[...q,item],value:item};});
       if(this.phase==='station')this.interrupt('request');
       this.refresh();return item;
-    }finally{this.requesting.delete(userId);}
+    }catch(error){if(error?.suggestions?.length)this.requestTimes.delete(userId);throw error;}
+    finally{this.requesting.delete(userId);}
   }
   async vote(id,userId){
     await this.mutateQueue(q=>({queue:toggleQueueVote(q,id,userId)}));this.refresh();

@@ -64,6 +64,24 @@ export async function checkFmRuntime(){
   return {extractor:checks[0].status==='fulfilled'?checks[0].value.stdout.trim().slice(0,80):null,
     ffmpeg:checks[1].status==='fulfilled'?checks[1].value.stdout.split('\n')[0].slice(0,100):null};
 }
+// Search metadata separately from audio extraction: one unavailable video must not
+// abort the entire result list. Only individual, public track URLs are returned.
+export async function discoverFmTracks(query,platform,limit=15){
+  if(!['soundcloud','youtube'].includes(platform)||!validQuery(query)||trackPlatform(query))return [];
+  const q=query.trim().replace(/[\r\n]/g,' ');
+  const count=Math.max(1,Math.min(20,Math.floor(limit)));
+  const {command,prefix}=extractorInvocation();
+  let stdout;
+  try{
+    ({stdout}=await runFile(command,[...prefix,'--ignore-config','--flat-playlist','--skip-download','--no-warnings','--socket-timeout','8','--js-runtimes','node','--dump-single-json','--', (platform==='soundcloud'?'scsearch':'ytsearch')+count+':'+q],{timeout:14000,maxBuffer:4*1024*1024,killSignal:'SIGKILL'}));
+  }catch(error){const code=extractorFailure(error);console.warn('[FM SEARCH]',platform,code);throw fmSourceError(code);}
+  const result=JSON.parse(stdout);
+  return (result.entries??[]).map(entry=>{
+    const raw=entry.webpage_url||entry.url;
+    const url=platform==='youtube'&&/^[a-zA-Z0-9_-]{11}$/.test(raw??'')?'https://www.youtube.com/watch?v='+raw:raw;
+    return {url,title:entry.track||entry.title,uploader:entry.artist||entry.uploader||entry.channel||'',durationSeconds:Number(entry.duration)||0,thumbnail:entry.thumbnail||null,platform};
+  }).filter(t=>trackPlatform(t.url)===platform&&t.title&&t.durationSeconds<=900);
+}
 export async function readTrackMetadata(query){
   if(!validTrackUrl(query)&&!/^ytsearch1:[^\r\n]{1,250}$/.test(query))throw new Error('Fonte inválida.');
   const {command,prefix}=extractorInvocation();

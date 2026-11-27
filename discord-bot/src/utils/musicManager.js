@@ -87,7 +87,7 @@ async function searchSoundCloud(query) {
 }
 
 // A FM usa uma lista de candidatos em vez de assumir que o primeiro resultado é a música certa.
-export async function searchSoundCloudCandidates(query,limit=8) {
+export async function searchSoundCloudCandidates(query,limit=15) {
   await ensureSoundCloud();
   const tracks=await playdl.search(query,{source:{soundcloud:'tracks'},limit});
   return (tracks??[]).map(scToInfo);
@@ -142,7 +142,7 @@ function scToInfo(sc) {
     duration: formatDuration(sc.durationInMs ? Math.round(sc.durationInMs / 1000) : 0),
     uploader: sc.user?.name ?? 'SoundCloud',
     thumbnail: sc.thumbnail ?? null,
-    url:      sc.permalink,
+    url:      sc.permalink_url ?? sc.permalink ?? sc.url,
     platform: 'soundcloud',
   };
 }
