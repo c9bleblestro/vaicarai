@@ -275,7 +275,7 @@ async function renderIllustrated(pet,{theme='neon',view='room',action='idle'}={}
   const source=getPetIllustration(pet.id,view);
   if(!source)throw new Error('Missing illustrated companion art');
   // Default view is exactly the original GIF, with its original palette and timing.
-  if(action==='idle'&&(theme==='neon'||view==='portrait')){
+  if((action==='idle'||action==='away')&&(theme==='neon'||view==='portrait')){
     return {buffer:source,ext:'gif',sourceAnimated:true,sourceFound:true,illustrated:true,fps:null};
   }
   const frameKey=species+':'+view;
@@ -300,10 +300,13 @@ async function renderIllustrated(pet,{theme='neon',view='room',action='idle'}={}
   const canvas=createCanvas(w,h),ctx=canvas.getContext('2d'),p=safeTheme(theme);
   // Preserve all drawn poses. Animate only the small reaction effects between poses.
   const enc=new GifEncoder(w,h,{repeat:0,quality:8});
-  const duration=Math.max(1280,seq.reduce((sum,f)=>sum+Math.max(80,f.delay),0)*2),count=Math.min(60,Math.ceil(duration/40));
+  const duration=4800,delay=80,count=duration/delay;
+  // Retimed idle assets include long natural rests; reaction clips use a separate
+  // pose clock so their movements are not swallowed by those holds.
+  const motionSeq=seq.map(f=>({...f,delay:Math.min(420,Math.max(100,f.delay))}));
   try{
     for(let i=0;i<count;i++){
-      const phase=i/count,t=i*40,src=spriteAt(seq,t);
+      const phase=i/count,t=i*delay,src=spriteAt(motionSeq,t);
       ctx.clearRect(0,0,w,h);ctx.drawImage(src,0,0,w,h);
       if(!portrait&&theme!=='neon'){
         const lighting=ctx.createLinearGradient(0,0,w,0);
@@ -324,11 +327,11 @@ async function renderIllustrated(pet,{theme='neon',view='room',action='idle'}={}
       if(action==='brincar'||action==='aventura'){
         for(let j=0;j<3;j++){const v=(phase+j/3)%1;ctx.save();ctx.globalAlpha=.7*Math.sin(Math.PI*v);sparkle(ctx,w*(.25+j*.25),h*(.55-v*.23),w*.018,p.light);ctx.restore();}
       }
-      const rgba=ctx.getImageData(0,0,w,h).data;enc.addFrame(new Uint8Array(rgba.buffer,rgba.byteOffset,rgba.byteLength),w,h,{delay:40});
+      const rgba=ctx.getImageData(0,0,w,h).data;enc.addFrame(new Uint8Array(rgba.buffer,rgba.byteOffset,rgba.byteLength),w,h,{delay});
     }
     const buffer=Buffer.from(enc.finish());
     if(buffer.length>8*1024*1024)throw new Error('Illustrated GIF too large');
-    return {buffer,ext:'gif',sourceAnimated:true,sourceFound:true,illustrated:true,fps:25};
+    return {buffer,ext:'gif',sourceAnimated:true,sourceFound:true,illustrated:true,fps:1000/delay};
   }finally{enc.dispose();}
 }
 
@@ -338,6 +341,11 @@ export async function renderPetWorld(pet,opts={}){
   const found=gifCache.get(key);if(found&&found.expires>Date.now())return found.result;
   if(found)gifCache.delete(key);
   if(inflight.has(key))return inflight.get(key);
-  const pending=(illustratedPetKey(pet.id)?renderIllustrated(pet,opts):localClip(pet,opts).then(clip=>clip??render(pet,opts))).then(result=>{if(result.sourceFound||!petThumbnailUrl(pet))cachePut(key,result);return result;}).finally(()=>inflight.delete(key));
+  const pending=(illustratedPetKey(pet.id)?renderIllustrated(pet,opts).catch(error=>{
+    console.warn('[pet-art] reaction failed, retaining illustrated view:',error?.message??error);
+    const buffer=getPetIllustration(pet.id,opts.view==='portrait'?'portrait':'room');
+    if(!buffer)throw error;
+    return {buffer,ext:'gif',sourceAnimated:true,sourceFound:true,illustrated:true,fallback:true,fps:null};
+  }):localClip(pet,opts).then(clip=>clip??render(pet,opts))).then(result=>{if(result.sourceFound||!petThumbnailUrl(pet))cachePut(key,result);return result;}).finally(()=>inflight.delete(key));
   inflight.set(key,pending);return pending;
 }
