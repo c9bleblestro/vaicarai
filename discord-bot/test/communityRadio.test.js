@@ -30,7 +30,7 @@ test('anonimato público e do locutor, fontes e proteção da conexão',()=>{
   assert.doesNotMatch(speechText(i),/Alice/);
   assert.match(speechText({...i,anonymous:false}),/Alice/);
   assert.equal(validQuery('nome da música'),true);
-  assert.equal(validQuery('https://youtu.be/example'),true);
+  assert.equal(validQuery('https://youtu.be/abcdefghijk'),true);
   assert.equal(validQuery('https://localhost/a'),false);
   assert.equal(validTrackUrl('https://soundcloud.com/artista/faixa'),true);
   assert.equal(validTrackUrl('https://soundcloud.com.evil.invalid/a/b'),false);
@@ -45,7 +45,13 @@ test('anonimato público e do locutor, fontes e proteção da conexão',()=>{
 });
 test('painel real V2, fila e modais serializam corretamente',()=>{
   const s={guild:{id:'123'},config:{guildId:'123',voiceChannelId:'456',textChannelId:'789',station:'auto',djRoleId:null},voiceChannel:{members:new Collection()},current:item('a'),queue:[item('b',['listener'])],player:{state:{status:AudioPlayerStatus.Playing,resource:{playbackDuration:30000}}},phase:'track'};
+  s.current.track.artwork='https://is1-ssl.mzstatic.com/image/thumb/test/600x600bb.jpg';
+  s.current.track.album='Álbum de teste';
   const p=buildFmPanel(s);
+  const parts=p.components[0].toJSON().components;
+  assert.equal(parts[1].type,12);
+  assert.equal(parts[1].items[0].media.url,s.current.track.artwork);
+  assert.match(JSON.stringify(parts),/Álbum de teste/);
   const json=JSON.stringify(p.components.map(c=>c.toJSON()));
   assert.match(json,/Substancy FM/);assert.match(json,/Anônimo/);assert.doesNotMatch(json,/Alice/);
   assert.match(json,/0:30/);assert.match(json,/fm:request/);assert.match(json,/discord.com\/channels\/123\/456/);

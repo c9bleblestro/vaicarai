@@ -56,6 +56,7 @@ jobs:
           node --check src/utils/reactionTriggers.js
           node --check src/utils/communityRadio.js
           node --check src/utils/fmAudio.js
+          node --check src/utils/fmTracks.js
           node --check src/commands/general/fm.js
           node --check src/commands/general/musica.js
           node --check src/commands/general/radio.js
@@ -72,4 +73,4 @@ jobs:
       - name: Prepare isolated test database
         run: npx prisma db push --skip-generate
       - name: Test XP rules and PNG rendering
-        run: node --test test/chatLevelMath.test.js test/chatLevelCard.test.js test/profileStatIcons.test.js test/chatLevelIntegration.test.js test/interactionStreak.test.js test/ticketPermissions.test.js test/ticketInvite.test.js test/reactionTriggers.test.js test/communityRadio.test.js
+        run: node --test test/chatLevelMath.test.js test/chatLevelCard.test.js test/profileStatIcons.test.js test/chatLevelIntegration.test.js test/interactionStreak.test.js test/ticketPermissions.test.js test/ticketInvite.test.js test/reactionTriggers.test.js test/communityRadio.test.js test/fmTracks.test.js

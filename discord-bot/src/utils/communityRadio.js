@@ -5,14 +5,15 @@ import {
 } from '@discordjs/voice';
 import {
   ChannelType, PermissionFlagsBits, MessageFlags, ContainerBuilder, TextDisplayBuilder,
-  SectionBuilder, ThumbnailBuilder, SeparatorBuilder, ActionRowBuilder, ButtonBuilder,
+  MediaGalleryBuilder, MediaGalleryItemBuilder, SeparatorBuilder, ActionRowBuilder, ButtonBuilder,
   ButtonStyle, escapeMarkdown,
 } from 'discord.js';
 import prisma from '../database/client.js';
 import { PLAYLISTS, radioSessions } from './radioManager.js';
-import { getTrackInfo, musicSessions } from './musicManager.js';
+import { musicSessions } from './musicManager.js';
 import { isFmVoiceReserved, reserveFmVoice, releaseFmVoice } from './fmVoiceGuard.js';
 import { validQuery, validTrackUrl, openStation, openTrack, openAnnouncement, speechText } from './fmAudio.js';
+import { resolveFmTrack, safeArtworkUrl } from './fmTracks.js';
 
 export const fmSessions=new Map();
 export const MAX_QUEUE=25, MAX_USER_QUEUE=3;
@@ -59,17 +60,18 @@ export function buildFmPanel(session){
   const status=session.stopped?'⚫ Encerrada':session.paused?'⏸ Pausada':actualPlaying?'🔴 Ao vivo':session.lastError?'🟠 Reconectando fonte':'🟡 Preparando áudio';
   const listeners=session.voiceChannel.members?.filter(m=>!m.user.bot).size??0;
   const c=new ContainerBuilder().addTextDisplayComponents(text('## ♫  Substancy FM\n-# '+status+' • '+listeners+' ouvinte(s) • <#'+session.config.voiceChannelId+'>'));
+  const cover=safeArtworkUrl(track?.artwork||track?.thumbnail);
+  if(cover)c.addMediaGalleryComponents(new MediaGalleryBuilder().addItems(
+    new MediaGalleryItemBuilder().setURL(cover).setDescription(md(track.album?'Capa: '+track.album:'Imagem da faixa',200)),
+  ));
   c.addSeparatorComponents(new SeparatorBuilder());
   const total=durationSeconds(track?.duration), elapsed=Math.floor((session.player.state.resource?.playbackDuration??0)/1000);
   const ratio=total>0&&session.phase==='track'?Math.min(1,elapsed/total):0;
   const filled=Math.round(ratio*14);
   const details=item
-    ? '-# '+(session.phase==='announcement'?'LOCUÇÃO • PRÓXIMA MÚSICA':'PEDIDO DA COMUNIDADE')+'\n**'+md(track.title,180)+'**\n'+md(track.uploader||'SoundCloud',120)+'\n'+(total?'\n'+(session.phase==='track'?'▰'.repeat(filled)+'▱'.repeat(14-filled)+'  '+time(Math.min(elapsed,total))+' / '+track.duration:'Duração: '+track.duration):'')
+    ? '-# '+(session.phase==='announcement'?'LOCUÇÃO • PRÓXIMA MÚSICA':'PEDIDO DA COMUNIDADE')+'\n**'+md(track.title,180)+'**\n'+md(track.uploader||'Artista não informado',120)+(track.album?'\n-# Álbum: '+md(track.album,120):'')+'\n-# Fonte: '+(track.platform==='youtube'?'YouTube':'SoundCloud')+'\n'+(total?'\n'+(session.phase==='track'?'▰'.repeat(filled)+'▱'.repeat(14-filled)+'  '+time(Math.min(elapsed,total))+' / '+track.duration:'Duração: '+track.duration):'')
     : '-# PROGRAMAÇÃO AO VIVO\n**'+md(station?.name||'Substancy FM')+'**\n'+md(station?.genre||'Programação contínua')+'\n-# Transmissão de estação • faixas individuais não identificadas';
-  const thumb=track?.thumbnail;
-  if(typeof thumb==='string'&&/^https:\/\//.test(thumb)){
-    c.addSectionComponents(new SectionBuilder().addTextDisplayComponents(text(details)).setThumbnailAccessory(new ThumbnailBuilder().setURL(thumb)));
-  }else c.addTextDisplayComponents(text(details));
+  c.addTextDisplayComponents(text(details));
   if(item){
     const d=safeDedication(item);
     c.addSeparatorComponents(new SeparatorBuilder());
@@ -143,12 +145,12 @@ export class CommunityRadioSession {
     if(this.requestTimes.size>1000)for(const [id,t] of this.requestTimes)if(Date.now()-t>60000)this.requestTimes.delete(id);
     try{
       let info;
-      try{info=await timeout(getTrackInfo(query.trim()),25000);}catch{throw new Error('Não encontrei uma faixa disponível. Tente outro nome ou link.');}
+      try{info=await timeout(resolveFmTrack(query.trim()),65000);}catch(error){throw new Error(error?.message||'Não encontrei uma faixa disponível. Tente outro nome ou link.');}
       if(!validTrackUrl(info.url))throw new Error('A busca não retornou uma fonte de áudio compatível.');
       if(durationSeconds(info.duration)>900)throw new Error('Escolha uma faixa de até 15 minutos.');
       const item={id:randomUUID(),requesterId:userId,requesterName:clip(name,80),recipientName:recipientName?clip(recipientName,80):null,
         anonymous:Boolean(anonymous),message:clip(message,240),createdAt:Date.now(),votes:[],
-        track:{title:clip(info.title||'Música',180),uploader:clip(info.uploader||'SoundCloud',120),duration:clip(info.duration,20),thumbnail:info.thumbnail||null,url:info.url}};
+        track:{title:clip(info.title||'Música',180),uploader:clip(info.uploader||'Artista não informado',120),duration:clip(info.duration,20),album:info.album?clip(info.album,150):null,artwork:safeArtworkUrl(info.artwork),thumbnail:safeArtworkUrl(info.thumbnail),platform:info.platform,url:info.url}};
       await this.mutateQueue(q=>{checkQueueLimit(q,userId);return {queue:[...q,item],value:item};});
       if(this.phase==='station')this.interrupt('request');
       this.refresh();return item;
