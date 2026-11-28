@@ -6,7 +6,7 @@ export const spriteId=name=>species[Object.keys(species).sort((a,b)=>b.length-a.
 const cache=new Map();
 async function art(p){
  const id=spriteId(p.card.name);
- if(id){if(!cache.has(id)){cache.set(id,(async()=>{try{return await loadImage(new URL('../assets/battle-sprites/'+id+'.png',import.meta.url).pathname);}catch{return null;}})());}const im=await cache.get(id);if(im)return {im,sprite:true};}
+ if(id){if(!cache.has(id)){cache.set(id,(async()=>{try{return await loadImage(new URL('../assets/battle-sprites/'+id+'.png',import.meta.url).pathname);}catch{} for(const url of ['https://raw.githubusercontent.com/PokeAPI/sprites/master/sprites/pokemon/other/official-artwork/'+id+'.png','https://raw.githubusercontent.com/PokeAPI/sprites/master/sprites/pokemon/'+id+'.png']){try{const r=await fetch(url,{signal:AbortSignal.timeout(2500)});if(r.ok)return await loadImage(Buffer.from(await r.arrayBuffer()));}catch{}}return null;})());}const im=await cache.get(id);if(im)return {im,sprite:true};cache.delete(id);}
  return {im:await loadImage(await generateCardSheet([p.card])),sprite:false};
 }
 function landscape(ctx){

@@ -1,0 +1,1 @@
+Artwork sourced from https://github.com/PokeAPI/sprites (official artwork or standard sprites). Pokémon character designs and artwork belong to their respective rights holders. Local files are preferred; other species are fetched with a bounded timeout and fall back to their existing card artwork if unavailable. Some forms use base species artwork.
