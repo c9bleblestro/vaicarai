@@ -11,6 +11,13 @@ async function art(p){
  const canonical=getCard(p.card.key)??p.card;
  try{return {im:await loadImage(await generateCardSheet([canonical])),sprite:false};}catch{return {im:null,sprite:false};}
 }
+let arenaBackgroundPromise;
+async function drawArenaBackground(ctx){
+ if(!arenaBackgroundPromise)arenaBackgroundPromise=loadImage(new URL('../assets/cards/battle-arena-stadium.jpg',import.meta.url).pathname).catch(()=>null);
+ const background=await arenaBackgroundPromise;
+ if(!background){landscape(ctx);return;}
+ ctx.drawImage(background,0,0,1200,675);
+}
 function landscape(ctx){
  ctx.fillStyle=gradient(ctx,0,0,0,675,[[0,'#64b3e0'],[.48,'#d4edf1'],[.49,'#a7cf76'],[1,'#568c48']]);ctx.fillRect(0,0,1200,675);
  for(let i=0;i<6;i++){let x=i*250-40,y=80+(i%2)*54;for(let j=0;j<4;j++)ellipse(ctx,x+j*43,y+(j%2)*12,55,20,'#ffffffbb');}
@@ -26,5 +33,5 @@ function hud(ctx,p,x,y){
  for(const [i,label,value,max,cl] of [[0,'HP',Math.max(0,p.hp),p.maxHp,p.hp/p.maxHp>.5?'#76b94c':p.hp/p.maxHp>.2?'#e2b841':'#d96355'],[1,'EN',p.energy,100,'#39a9d3']]){let yy=y+57+i*31;txt(ctx,label,x+18,yy,17,'#29454a');box(ctx,x+64,yy-8,255,16,8,'#cfdbd3');const r=Math.max(0,Math.min(1,value/Math.max(1,max)));if(r>0)box(ctx,x+64,yy-8,255*r,16,Math.min(8,255*r/2),cl);txt(ctx,value+'/'+max,x+450,yy,17,'#29454a',true,'right');}
 }
 export async function generateBattleBoard(first,second,turnName=''){
- const [c,ctx]=scene();landscape(ctx);const [a,b]=await Promise.all([art(first),art(second)]);creature(ctx,second,b,815,432,330,300,false);creature(ctx,first,a,315,563,420,370,true);hud(ctx,second,705,22);hud(ctx,first,705,535);box(ctx,24,23,390,44,14,'#e9f2e6ed','#568b83');txt(ctx,'Vez de '+turnName,42,45,21,'#234b50',true,'left',353);return png(c);
+ const [c,ctx]=scene();await drawArenaBackground(ctx);const [a,b]=await Promise.all([art(first),art(second)]);creature(ctx,second,b,815,432,330,300,false);creature(ctx,first,a,315,563,420,370,true);hud(ctx,second,705,22);hud(ctx,first,705,535);box(ctx,24,23,390,44,14,'#e9f2e6ed','#568b83');txt(ctx,'Vez de '+turnName,42,45,21,'#234b50',true,'left',353);return png(c);
 }
