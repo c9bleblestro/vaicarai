@@ -12,7 +12,7 @@ import {
   StringSelectMenuOptionBuilder,
   TextDisplayBuilder,
 } from 'discord.js';
-import { generateUnoCard, generateUnoTable, unoColorValue } from './unoVisuals.js';
+import { generateUnoCard, generateUnoTable, generateUnoHand, unoColorValue } from './unoVisuals.js';
 
 const MAX_PLAYERS = 10;
 const STARTING_HAND_SIZE = 7;
@@ -364,13 +364,13 @@ function handOptions(game, player) {
   return options.slice(0, 25);
 }
 
-function handPayload(game, player, notice = '') {
+async function handPayload(game, player, notice = '') {
   const isTurn = game.status === 'playing'
     && !game.pendingWild
     && currentPlayer(game)?.id === player.id;
   const hand = player.hand ?? [];
   const cards = hand.length
-    ? hand.map(card => `• ${cardLabel(card)}`).join('\n')
+    ? hand.map(card => `• ${cardLabel(card)}`).join('\n').slice(0,2600)
     : 'Sem cartas';
   const container = new ContainerBuilder()
     .setAccentColor(unoColorValue(game.activeColor ?? 'wild'))
@@ -382,6 +382,9 @@ function handPayload(game, player, notice = '') {
     ))
     .addSeparatorComponents(new SeparatorBuilder());
 
+  const filename=`uno-private-${game.id}-${game.turnVersion}-${Date.now()}.png`;
+  let files=[];
+  try{const image=await generateUnoHand(hand);container.addMediaGalleryComponents(new MediaGalleryBuilder().addItems(new MediaGalleryItemBuilder().setURL(`attachment://${filename}`)));files=[new AttachmentBuilder(image,{name:filename})];}catch(error){console.warn('[UNO] Private art:',error?.message??error);}
   const components = [container];
   if (isTurn) {
     components.push(new ActionRowBuilder().addComponents(
@@ -396,7 +399,7 @@ function handPayload(game, player, notice = '') {
     ));
   }
   return {
-    components,
+    components,files,
     flags: MessageFlags.IsComponentsV2 | MessageFlags.Ephemeral,
   };
 }
@@ -584,11 +587,11 @@ export async function handleUnoInteraction(interaction) {
   if (!player) return interaction.reply(v2Notice('❌ Você não participa desta partida.'));
 
   if (action === 'uno_hand') {
-    if (interaction.isButton()) return interaction.reply(game.pendingWild?.playerId===userId?colorPayload(game):handPayload(game, player));
+    if (interaction.isButton()) return interaction.reply(game.pendingWild?.playerId===userId?colorPayload(game):await handPayload(game, player));
     if(version!==String(game.turnVersion))return interaction.reply(v2Notice('Esta mão está desatualizada. Abra Minha mão novamente.'));
 
     if (player.id !== currentPlayer(game).id) {
-      return interaction.update(handPayload(game, player, `⏳ Aguarde a vez de **${playerName(currentPlayer(game))}**.`));
+      return interaction.update(await handPayload(game, player, `⏳ Aguarde a vez de **${playerName(currentPlayer(game))}**.`));
     }
     if (game.pendingWild) return interaction.update(colorPayload(game));
 
@@ -596,7 +599,7 @@ export async function handleUnoInteraction(interaction) {
     if(selected==='pass'){
       if(!game.drawnCardId)return interaction.reply(v2Notice('Compre uma carta antes de passar.'));
       game.drawnCardId=null;game.turnVersion++;game.turnIndex=nextIndex(game);touch(game);
-      await interaction.update(handPayload(game,player,'Você passou a vez.'));
+      await interaction.update(await handPayload(game,player,'Você passou a vez.'));
       return editPublicBoard(interaction,game,`${playerName(player)} passou a vez.`);
     }
     if (selected === 'draw') {
@@ -608,14 +611,14 @@ export async function handleUnoInteraction(interaction) {
         game.drawnCardId=null;game.turnVersion++;
         game.turnIndex = nextIndex(game, 1);
         touch(game);
-        const privatePayload = handPayload(game, player, 'Você comprou e passou a vez.');
+        const privatePayload = await handPayload(game, player, 'Você comprou e passou a vez.');
         await interaction.update(privatePayload);
         await editPublicBoard(interaction, game, `🃏 ${playerName(player)} comprou uma carta e passou a vez.`);
         return;
       }
       game.drawnCardId=card.id;game.turnVersion++;
       touch(game);
-      const privatePayload = handPayload(
+      const privatePayload = await handPayload(
         game,
         player,
         `Você comprou **${cardLabel(card)}** e pode jogar.`,
@@ -649,7 +652,7 @@ export async function handleUnoInteraction(interaction) {
       await editPublicPayload(interaction, game, payload);
       return;
     }
-    const privatePayload = handPayload(game, player, `Você jogou **${cardLabel(card)}**.`);
+    const privatePayload = await handPayload(game, player, `Você jogou **${cardLabel(card)}**.`);
     await interaction.update(privatePayload);
     await editPublicBoard(interaction, game, `✅ ${playerName(player)} jogou **${cardLabel(card)}**.`);
     return;
@@ -679,7 +682,7 @@ export async function handleUnoInteraction(interaction) {
     advanceAfterCard(game, card);
     touch(game);
     const notice = `🌈 ${playerName(player)} escolheu ${UNO_COLORS[chosenColor].emoji} **${UNO_COLORS[chosenColor].label}**.`;
-    await interaction.update(handPayload(game, player, notice));
+    await interaction.update(await handPayload(game, player, notice));
     await editPublicBoard(interaction, game, notice);
     return;
   }
