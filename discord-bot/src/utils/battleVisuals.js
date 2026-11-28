@@ -1,13 +1,15 @@
 import {loadImage} from '@napi-rs/canvas';
 import {scene,box,txt,gradient,ellipse,png,noise} from './gameArt.js';
 import {generateCardSheet} from './cardVisuals.js';
+import {getCard} from './cardData.js';
 const species={'Mega Charizard X':10034,'Mega Charizard Y':10035,'Mega Charizard':10034,'Mega Gengar':10038,'Mega Ampharos':10045,'Mega Blaziken':10050,'Mega Gardevoir':10051,'Mega Lucario':10059,'Mega Greninja':658,'Mega Darkrai':491,'Mega Dragonite':149,'Mega Froslass':478,'Mega Zygarde':718,'Tapu Koko':785,'Cauda Brado':987,'Ho-Oh':250,Mewtwo:150,Mew:151,Pikachu:25,Eevee:133,Lunala:792,Gyarados:130,Arceus:493,Ivysaur:2,Charmander:4,Gengar:94,Jigglypuff:39,Squirtle:7,Haunter:93,Charmeleon:5,Meowth:52,Flareon:136,Cinccino:573,Raboot:814,Azumarill:184,Rowlet:722,Machop:66,Wartortle:8,Turtwig:387,Diglett:50,Torracat:726,Dratini:147,Feraligatr:160,Piplup:393,Reuniclus:579,Vaporeon:134,Venusaur:3,Pichu:172,Alakazam:65,Carvanha:318,Scizor:212,Greninja:658,Ekans:23,Shellder:90,Sceptile:254,Latias:380,Deoxys:386,Zekrom:644,Mimikyu:778,Gardevoir:282,Salamence:373};
 export const spriteId=name=>species[Object.keys(species).sort((a,b)=>b.length-a.length).find(k=>String(name).startsWith(k))]??null;
 const cache=new Map();
 async function art(p){
  const id=spriteId(p.card.name);
  if(id){if(!cache.has(id)){cache.set(id,(async()=>{try{return await loadImage(new URL('../assets/battle-sprites/'+id+'.png',import.meta.url).pathname);}catch{} for(const url of ['https://raw.githubusercontent.com/PokeAPI/sprites/master/sprites/pokemon/other/official-artwork/'+id+'.png','https://raw.githubusercontent.com/PokeAPI/sprites/master/sprites/pokemon/'+id+'.png']){try{const r=await fetch(url,{signal:AbortSignal.timeout(2500)});if(r.ok)return await loadImage(Buffer.from(await r.arrayBuffer()));}catch{}}return null;})());}const im=await cache.get(id);if(im)return {im,sprite:true};cache.delete(id);}
- return {im:await loadImage(await generateCardSheet([p.card])),sprite:false};
+ const canonical=getCard(p.card.key)??p.card;
+ try{return {im:await loadImage(await generateCardSheet([canonical])),sprite:false};}catch{return {im:null,sprite:false};}
 }
 function landscape(ctx){
  ctx.fillStyle=gradient(ctx,0,0,0,675,[[0,'#64b3e0'],[.48,'#d4edf1'],[.49,'#a7cf76'],[1,'#568c48']]);ctx.fillRect(0,0,1200,675);
@@ -18,7 +20,7 @@ function landscape(ctx){
  for(let i=0;i<100;i++){let x=(i*131)%1200,y=390+(i*73)%285;ctx.strokeStyle='#457b3f55';ctx.beginPath();ctx.moveTo(x,y+8);ctx.lineTo(x-3,y);ctx.moveTo(x,y+8);ctx.lineTo(x+5,y-3);ctx.stroke();}
  ellipse(ctx,805,430,260,57,'#acd19a','#ebefc4',4);ellipse(ctx,310,560,265,65,'#9dc888','#ebefc4',4);
 }
-function creature(ctx,p,a,x,y,w,h,flip){const {im,sprite}=a;ctx.save();if(sprite){const k=Math.min(w/im.width,h/im.height),iw=im.width*k,ih=im.height*k;ellipse(ctx,x,y+3,iw*.36,18,'#335d3055');ctx.translate(x,y);if(flip)ctx.scale(-1,1);ctx.drawImage(im,-iw/2,-ih,iw,ih);}else{const k=Math.min(w/im.width,h/im.height);ctx.drawImage(im,x-im.width*k/2,y-im.height*k,im.width*k,im.height*k);}ctx.restore();}
+function creature(ctx,p,a,x,y,w,h,flip){const {im,sprite}=a;if(!im){ellipse(ctx,x,y-55,55,55,'#d8eacb','#507b54',2);txt(ctx,p.card.name,x,y-55,14,'#31563b',true,'center',104);return;}ctx.save();if(sprite){const k=Math.min(w/im.width,h/im.height),iw=im.width*k,ih=im.height*k;ellipse(ctx,x,y+3,iw*.36,18,'#335d3055');ctx.translate(x,y);if(flip)ctx.scale(-1,1);ctx.drawImage(im,-iw/2,-ih,iw,ih);}else{const k=Math.min(w/im.width,h/im.height);ctx.drawImage(im,x-im.width*k/2,y-im.height*k,im.width*k,im.height*k);}ctx.restore();}
 function hud(ctx,p,x,y){
  box(ctx,x,y,470,114,14,'#f4f4e8','#568b83',3);txt(ctx,p.card.name,x+18,y+24,22,'#19363b',true,'left',340);txt(ctx,'CP '+p.cp,x+453,y+24,16,'#28535a',true,'right',100);
  for(const [i,label,value,max,cl] of [[0,'HP',Math.max(0,p.hp),p.maxHp,p.hp/p.maxHp>.5?'#76b94c':p.hp/p.maxHp>.2?'#e2b841':'#d96355'],[1,'EN',p.energy,100,'#39a9d3']]){let yy=y+57+i*31;txt(ctx,label,x+18,yy,17,'#29454a');box(ctx,x+64,yy-8,255,16,8,'#cfdbd3');const r=Math.max(0,Math.min(1,value/Math.max(1,max)));if(r>0)box(ctx,x+64,yy-8,255*r,16,Math.min(8,255*r/2),cl);txt(ctx,value+'/'+max,x+450,yy,17,'#29454a',true,'right');}
