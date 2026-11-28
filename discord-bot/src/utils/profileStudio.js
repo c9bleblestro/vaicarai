@@ -25,7 +25,7 @@ const label=v=>typeof v==='string'?v:v.name;
 export function buildProfileStudioPayload(userId,profile,owned=[]){
   const a=profileAppearance(profile);
   const select=(key,title)=>row(new StringSelectMenuBuilder().setCustomId('profile_studio:'+key+':'+userId).setPlaceholder(title).addOptions(Object.entries(groups[key].options).filter(([v])=>key!=='decor'||!Object.hasOwn(ECONOMY_COSMETICS,v)||owned.includes(v)).map(([value,name])=>({label:label(name),value,default:a[key]===value}))));
-  return {content:'## ✧ Estúdio de perfil\nEscolha seu visual. Grafite neutro por padrão; escolha temas, decorações e animações independentes. O banner mantém a velocidade original. As alterações são salvas apenas no seu perfil.\n**Tema:** '+PROFILE_THEMES[a.theme].name+' • **Animação:** '+PROFILE_EFFECTS[a.effect]+'\n**Decoração:** '+PROFILE_DECORS[a.decor]+'\n-# Suas cores personalizadas de fundo e painel têm prioridade sobre o tema. O clássico mantém o layout anterior, sem decoração ou assinatura nova. Reflexo ilumina somente os textos; Borboletas percorrem as margens e o avatar.\n-# Banner, argola, moldura VIP, pet, conquistas e cores continuam no menu original. Use Atualizar no perfil público para aplicar as escolhas.',components:[
+  return {content:'## ✧ Estúdio de perfil\nEscolha seu visual. Grafite neutro por padrão; escolha temas, decorações e animações independentes. O banner mantém a velocidade original. As alterações são salvas apenas no seu perfil.\n**Tema:** '+PROFILE_THEMES[a.theme].name+' • **Animação:** '+PROFILE_EFFECTS[a.effect]+'\n**Decoração:** '+PROFILE_DECORS[a.decor]+'\n-# Suas cores personalizadas de fundo e painel têm prioridade sobre o tema. Todos os temas usam o novo layout. Reflexo ilumina os textos, Borboletas percorrem o avatar e Onda Cristalina ilumina os painéis em sequência.\n-# Banner, argola, moldura VIP, pet, conquistas e cores continuam no menu original. Use Atualizar no perfil público para aplicar as escolhas.',components:[
     select('theme','Escolha um tema'),select('effect','Escolha uma animação'),select('decor','Escolha uma decoração'),
     row(new ButtonBuilder().setCustomId('profile_studio:signature:'+userId).setLabel('Assinatura').setStyle(ButtonStyle.Secondary),new ButtonBuilder().setCustomId('profile_studio:preview:'+userId).setLabel('Prévia real').setStyle(ButtonStyle.Primary),new ButtonBuilder().setCustomId('profile_studio:reset:'+userId).setLabel('Restaurar visual').setStyle(ButtonStyle.Secondary))
   ],allowedMentions};
@@ -50,7 +50,7 @@ export async function handleProfileStudio(i){
     try{
       const {buildProfilePayload}=await import('../commands/general/perfil.js');
       const p=await buildProfilePayload({userId:i.user.id,guildId:i.guildId,guild:i.guild,target:i.user});
-      return i.editReply({content:'Prévia com seus dados e itens atuais.',files:p.files,allowedMentions});
+      return i.editReply({content:p.content??'Prévia com seus dados e itens atuais.',files:p.files,allowedMentions});
     }catch(error){console.warn('[PROFILE STUDIO]',error?.message??error);return i.editReply('Não consegui gerar a prévia. Tente novamente.');}
   }
   if(!['theme','effect','decor','signature','reset'].includes(action))return;

@@ -449,7 +449,9 @@ export async function generateProfileCard({
   _returnLayers = false,
   _returnCanvas = false, // se true, retorna o canvas em vez de PNG buffer
 }) {
-  if (appearance && normalizeAppearance(appearance).theme !== 'classic') {
+  // All member themes use the same approved layout; raw legacy callers without
+  // appearance retain the old rendering contract.
+  if (appearance) {
     return drawStudioProfile({
       username, avatarUrl, balance, bank, activeBanner, purchases, activeRing, ringBorderColor, activePet,
       guildBadgeEmojis, guildId, marriedToName, bestFriendName, bio, cardBg1, cardBg2, cardPanelColor,

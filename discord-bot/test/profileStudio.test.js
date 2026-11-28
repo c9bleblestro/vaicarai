@@ -104,7 +104,7 @@ test('grafite é o padrão neutro e não altera escolhas salvas',()=>{
 test('novos efeitos animam pixels sem substituir foto, banner ou valores',async()=>{
  const bannerCanvas=createCanvas(120,80),b=bannerCanvas.getContext('2d');b.fillStyle='#11cc77';b.fillRect(0,0,120,80);
  const banner=await loadImage(bannerCanvas.toBuffer('image/png'));
- for(const effect of ['reflection','butterflies']){
+ for(const effect of ['reflection','butterflies','crystal']){
   const appearance={theme:'graphite',effect,decor:'none'};
   const base=await generateProfileCard({...params,appearance,_bannerImage:banner,_returnCanvas:true});
   const render=phase=>{const c=createCanvas(800,600),ctx=c.getContext('2d');ctx.drawImage(base,0,0);drawProfileEffect(ctx,appearance,phase,base);return c;};
@@ -120,4 +120,27 @@ test('novos efeitos animam pixels sem substituir foto, banner ou valores',async(
   const frames=framesOf(gif);assert.ok(frames.length>=24);assert.ok(gif.length<=8*1024*1024);
   assert.ok(frames.some((f,i)=>i>0&&!Buffer.from(f.patch).equals(Buffer.from(frames[0].patch))));
  }
+});
+
+test('o layout novo é universal e não depende de trocar tema ou cores',async()=>{
+ const c=createCanvas(100,60),ctx=c.getContext('2d');ctx.fillStyle='#11cc77';ctx.fillRect(0,0,100,60);
+ const banner=await loadImage(c.toBuffer('image/png'));
+ for(const theme of ['classic','noir','rose','blush','graphite']){
+  const card=await generateProfileCard({...params,appearance:{theme,decor:'none',signature:'Assinatura real'},cardBg1:'#18191b',cardBg2:'#18191b',cardPanelColor:'#222326',_bannerImage:banner,_returnLayers:true});
+  assert.deepEqual(card.bannerRect,[24,24,516,150,20]);
+  const fg=card.foreground.getContext('2d');
+  assert.ok(fg.getImageData(60,317,1,1).data[3]>0);
+ }
+});
+test('Onda Cristalina move luz entre painéis e não muda o topo',async()=>{
+ const appearance={theme:'noir',effect:'crystal',decor:'none'};
+ const base=await generateProfileCard({...params,appearance,_returnCanvas:true});
+ const src=base.getContext('2d').getImageData(0,0,800,600).data;
+ const diff=(phase)=>{
+  const c=createCanvas(800,600),ctx=c.getContext('2d');ctx.drawImage(base,0,0);drawProfileEffect(ctx,appearance,phase,base);
+  const d=ctx.getImageData(0,0,800,600).data;let n=0,first=0,last=0;
+  for(let y=0;y<600;y++)for(let x=0;x<800;x++){const i=(y*800+x)*4;if(d[i]===src[i]&&d[i+1]===src[i+1]&&d[i+2]===src[i+2])continue;n++;assert.ok(y>=284&&y<579);if(y<350&&x<400)first++;if(y>=514&&x>=484)last++;}
+  return {n,first,last};
+ };
+ assert.ok(diff(.10).first>100);assert.ok(diff(.89).last>100);
 });

@@ -179,7 +179,7 @@ export async function generateAnimatedProfileCard(params){
   const banner=params._resolvedBanner??await resolveBanner(params.activeBanner,params.guildId,{includeImageData:true});
   const appearance=params.appearance?normalizeAppearance(params.appearance):{theme:'classic',effect:'banner'};
   const hasEffect=!['off','banner'].includes(appearance.effect);
-  const rect=appearance.theme==='classic'?[18,18,764,128,24]:[24,24,516,150,20];
+  const rect=params.appearance?[24,24,516,150,20]:[18,18,764,128,24];
   let frames=[];
   if(isGifProfileBanner(banner)){
     try{frames=await fetchGifFrames(banner,rect);}catch(error){
@@ -208,7 +208,7 @@ export async function generateAnimatedProfileCard(params){
   }
   const steps=hasEffect?[40,50,70,100]:[40];
   for(const step of steps){
-    const timeline=buildMotionTimeline(frames,hasEffect,step,appearance.effect==='reflection'?4800:appearance.effect==='butterflies'?3600:2400);
+    const timeline=buildMotionTimeline(frames,hasEffect,step,appearance.effect==='crystal'?4200:appearance.effect==='reflection'?4800:appearance.effect==='butterflies'?3600:2400);
     let result;
     try{result=await optimizedGif(timeline,draw);}catch(error){
       console.warn('[animCard] FFmpeg indisponível; encoder nativo:',error?.message??error);
