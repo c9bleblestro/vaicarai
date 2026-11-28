@@ -18,6 +18,7 @@ export default {
       return interaction.reply({ content: '❌ Apenas administradores podem abrir uma expedição.', ephemeral: true });
     }
 
+    await interaction.deferReply({ephemeral:true});
     let gameChannel;
     let game;
     try {
@@ -67,17 +68,13 @@ export default {
 
       const message = await gameChannel.send(buildSurvivalPayload(game));
       game.messageId = message.id;
-      return interaction.reply({
-        content: `✅ Expedição criada em ${gameChannel}. Os membros podem clicar em **Participar**.`,
-        ephemeral: true,
-      });
+      return interaction.editReply({content: `✅ Expedição criada em ${gameChannel}. Os membros podem usar o menu para participar.`});
     } catch (error) {
       console.error('[SURVIVAL] Falha ao publicar expedição:', error);
       if (game) removeSurvivalGame(game.id);
       if (gameChannel) await gameChannel.delete('Falha ao publicar a expedição').catch(() => {});
-      return interaction.reply({
+      return interaction.editReply({
         content: '❌ Não consegui criar o canal temporário da expedição. Verifique se o bot tem **Gerenciar Canais**, **Ver Canal**, **Enviar Mensagens** e **Anexar Arquivos**.',
-        ephemeral: true,
       });
     }
   },

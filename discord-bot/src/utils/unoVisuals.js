@@ -302,3 +302,19 @@ export async function generateUnoCard(card) {
 export function unoColorValue(color) {
   return COLOR_VALUES[color] ?? COLOR_VALUES.wild;
 }
+
+// Public board: no hidden hand contents are rendered.
+export async function generateUnoTable(top,{color,players,direction}){
+ const c=createCanvas(960,540),ctx=c.getContext('2d');
+ const g=ctx.createLinearGradient(0,0,960,540);g.addColorStop(0,'#102d30');g.addColorStop(1,'#101821');ctx.fillStyle=g;ctx.fillRect(0,0,960,540);
+ const box=(x,y,w,h,r,fill,stroke)=>{ctx.beginPath();ctx.roundRect(x,y,w,h,r);ctx.fillStyle=fill;ctx.fill();if(stroke){ctx.strokeStyle=stroke;ctx.lineWidth=1.5;ctx.stroke();}};
+ const text=(v,x,y,size,col='#eaf4f4',bold=false)=>{ctx.font=(bold?'bold ':'')+size+'px sans-serif';ctx.fillStyle=col;ctx.fillText(String(v),x,y);};
+ box(20,20,920,500,28,'#ffffff05','#527d79');text('SUBSTANCY  /  UNO',42,62,25,'#a7e8d8',true);text('MESA MULTIPLAYER',42,88,14,'#91aaa9');
+ const current=players.find(p=>p.active);text('VEZ DE '+String(current?.name??'').slice(0,24),490,62,23,'#ffffff',true);text(direction===1?'Sentido horário':'Sentido anti-horário',490,88,15,'#91aaa9');
+ box(42,112,408,376,22,'#0a171c','#355553');
+ box(65,133,362,48,14,COLORS[color]??COLORS.wild);text('COR ATIVA',84,163,17,color==='yellow'?'#202124':'#ffffff',true);
+ const card=await loadImage(await generateUnoCard(top));ctx.drawImage(card,177,198,137,219);
+ text('CARTA NA MESA',154,451,17,'#a7e8d8',true);
+ players.forEach((p,i)=>{const x=477+(i%2)*225,y=112+Math.floor(i/2)*75;box(x,y,213,65,13,p.active?'#244d49':'#1a2930',p.active?'#a7e8d8':'#355553');text(String(p.name).slice(0,16),x+12,y+25,16,'#ffffff',true);text(p.count+' carta(s)'+(p.active?'  ·  VEZ':''),x+12,y+48,15,p.active?'#a7e8d8':'#b2c5c4');});
+ return c.toBuffer('image/png');
+}

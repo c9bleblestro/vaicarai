@@ -45,9 +45,9 @@ async function getTeam(userId, guildId) {
   if (!row) return [];
   try {
     const keys = JSON.parse(row.cardKeys);
-    return Array.isArray(keys) && keys.length === TEAM_SIZE
-      ? keys.map(key => getCard(key)).filter(Boolean)
-      : [];
+    if(!Array.isArray(keys)||keys.length!==TEAM_SIZE||new Set(keys).size!==TEAM_SIZE)return [];
+    const owned=new Set((await getOwnedCards(userId)).map(card=>card.key));
+    return keys.every(key=>owned.has(key))?keys.map(key=>getCard(key)).filter(Boolean):[];
   } catch {
     return [];
   }
@@ -326,12 +326,12 @@ async function battlePayload(battle, extra = '') {
   } catch {}
   return {
     content: [
-      '## Batalha Pokémon GO',
+      '## ⚔️ SUBSTANCY • ARENA POKÉMON',
       `**${first.name}**\n${renderPokemon(activePokemon(battle, first.id))}`,
       '',
       `**${second.name}**\n${renderPokemon(activePokemon(battle, second.id))}`,
       '',
-      `Vez de **${turnPlayer.name}** — escolha um dos golpes da carta ativa.`,
+      `### Vez de ${turnPlayer.name}\nEnergia: **${current.energy}/100** · escolha um golpe ou troque de Pokémon.`,
       extra || battle.log,
     ].join('\n'),
     components: [controls, utilityControls],
@@ -455,7 +455,9 @@ async function startTestBattle(interaction, userId, guildId, reply) {
     name: interaction.member?.displayName ?? actor.username,
   }, team);
   battles.set(battle.id, battle);
-  return reply(await battlePayload(battle));
+  const message=await reply(await battlePayload(battle));
+  if(message?.edit)battle.message=message;
+  return message;
 }
 
 async function challengeMember(interaction, target, reply) {
@@ -500,6 +502,7 @@ export async function handleBattleInteraction(interaction) {
     if (session.userId !== interaction.user.id) return interaction.reply({ content: 'Este time pertence a outra pessoa.', ephemeral: true });
     const slot = Number(value);
     const selected = interaction.values[0];
+    if(!Number.isInteger(slot)||slot<0||slot>=TEAM_SIZE||!session.cards.some(card=>card.key===selected))return interaction.reply({content:'Carta ou posição inválida.',ephemeral:true});
     if (session.selected.includes(selected) && session.selected[slot] !== selected) {
       return interaction.reply({ content: 'Escolha três Pokémon diferentes.', ephemeral: true });
     }
@@ -527,9 +530,11 @@ export async function handleBattleInteraction(interaction) {
     const session = getTeamSession(id);
     if (!session) return interaction.reply({ content: 'Esta montagem expirou. Use `/batalha montar` novamente.', ephemeral: true });
     if (session.userId !== interaction.user.id) return interaction.reply({ content: 'Este time pertence a outra pessoa.', ephemeral: true });
-    if (session.selected.length !== TEAM_SIZE || new Set(session.selected).size !== TEAM_SIZE) {
+    if (session.selected.length !== TEAM_SIZE || session.selected.filter(Boolean).length!==TEAM_SIZE || new Set(session.selected).size !== TEAM_SIZE) {
       return interaction.reply({ content: 'Escolha três Pokémon diferentes antes de confirmar.', ephemeral: true });
     }
+    const owned=new Set((await getOwnedCards(session.userId)).map(card=>card.key));
+    if(!session.selected.every(key=>owned.has(key)))return interaction.reply({content:'Seu inventário mudou. Monte o time novamente.',ephemeral:true});
     await saveTeam(session.userId, session.guildId, session.selected);
     teamSessions.delete(id);
     return interaction.update({
@@ -604,7 +609,7 @@ export async function handleBattleInteraction(interaction) {
     const damage = Math.max(8, Math.round(
       power * cpMultiplier * typeMultiplier * rarityMultiplier * sameTypeBonus,
     ));
-    defender.hp -= damage;
+    defender.hp = Math.max(0,defender.hp-damage);
     current.energy = Math.min(100, current.energy - energyCost + (energyCost === 0 ? 35 : 8));
 
     const advantageText = typeMultiplier > 1 ? ' Foi super eficaz!' : typeMultiplier < 1 ? ' Não foi muito eficaz...' : '';
@@ -664,7 +669,7 @@ export async function handleBattleInteraction(interaction) {
     if (value === 'surrender') {
       battle.finished = true;
       battle.winner = defenderId;
-      battle.log = `${battle.players[interaction.user.id].name} desistiu.`;
+      battle.log = `${battle.players[actingSideId].name} desistiu.`;
        return updateBattle(interaction, battle);
     }
     if (value === 'switch') {
@@ -673,8 +678,7 @@ export async function handleBattleInteraction(interaction) {
       }
       return interaction.reply(switchPayload(battle, actingSideId));
      }
-    battle.turn = defenderId;
-     return updateBattle(interaction, battle);
+    return interaction.reply({content:'Ação desconhecida.',ephemeral:true});
   }
 }
 

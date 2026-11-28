@@ -378,6 +378,7 @@ function gamePayload(game, notice = game.notice) {
     .addTextDisplayComponents(new TextDisplayBuilder().setContent([
       notice ? `> ${notice}` : '',
       `### ${question.prompt}`,
+      ...question.options.map((option,index)=>`**${ANSWER_LETTERS[index]}** · ${option}`),
       '',
       `🎤 **Vez de ${playerName(current)}**`,
       `⏱️ Responda até <t:${deadline}:R>`,
@@ -391,7 +392,7 @@ function gamePayload(game, notice = game.notice) {
   const answerButtons = question.options.map((option, index) =>
     new ButtonBuilder()
       .setCustomId(`milhao_answer:${game.id}:${game.questionToken}:${index}`)
-      .setLabel(`${ANSWER_LETTERS[index]} · ${option.slice(0, 76)}`)
+      .setLabel(`${ANSWER_LETTERS[index]} · Responder`)
       .setStyle(ButtonStyle.Secondary),
   );
 

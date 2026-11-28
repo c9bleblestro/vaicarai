@@ -516,7 +516,8 @@ function buildRoundPayload(game) {
       game.currentPrompt || scenario.text,
       history ? `**Acontecimentos recentes**\n${history}` : '',
       '',
-      `**Votação** ${voted}/${alive.length} sobreviventes já escolheram.`,
+      `**Votação** ${voted}/${alive.length} sobreviventes já escolheram.${game.roundDeadline?` · encerra <t:${Math.floor(game.roundDeadline/1000)}:R>`:''}`,
+      `**Rota de fuga** ${'▰'.repeat(Math.max(0,Math.min(8,game.escapeProgress)))}${'▱'.repeat(8-Math.max(0,Math.min(8,game.escapeProgress)))}`, 
       `**${formatStats(game)}**`,
       `**❤️ Vida da equipe** ${teamHealthBar(game)}`,
       `**🌦️ Ambiente** ${game.weather}  •  **🌡️ Perigo** ${game.danger}/10  •  **😮‍💨 Fadiga** ${game.fatigue}/10`,
@@ -531,7 +532,7 @@ function buildRoundPayload(game) {
   return {
     components: [
       panel,
-      selectRow(`survival_decision:${game.id}`, 'Escolha uma decisão ou ação individual', decisionOptions(game, counts)),
+      selectRow(`survival_decision:${game.id}:${game.round}`, 'Escolha uma decisão ou ação individual', decisionOptions(game, counts)),
       selectRow(`survival_control:${game.id}`, 'Controles da expedição', [
         option('Ver situação', 'status', 'Abrir seus dados e o estado da equipe.', '📊'),
         option('Marcar participantes', 'tag', 'Disponível para o organizador.', '📣'),
@@ -687,7 +688,8 @@ async function publishGameMessage(client, game) {
 
 function scheduleRound(client, game) {
   clearTimeout(game.timer);
-  game.timer = setTimeout(() => resolveRound(client, game), VOTE_TIMEOUT_MS);
+  game.roundDeadline=Date.now()+VOTE_TIMEOUT_MS;
+  game.timer = setTimeout(() => resolveRound(client, game).catch(error=>console.error('[SURVIVAL] Rodada:',error)), VOTE_TIMEOUT_MS);
 }
 
 function chooseWinningChoice(game, scenario) {
@@ -906,9 +908,10 @@ async function rewardPlayers(game) {
 }
 
 async function resolveRound(client, game) {
-  if (game.stage !== 'round') return;
+  if (game.stage !== 'round'||game.resolving) return;
+  game.resolving=true;
   clearTimeout(game.timer);
-
+  try{
   const scenario = scenarioFor(game);
   const choice = chooseWinningChoice(game, scenario);
   await applyChoice(game, scenario, choice);
@@ -935,6 +938,7 @@ async function resolveRound(client, game) {
 
   game.actions.clear();
   await publishGameMessage(client, game);
+  }finally{game.resolving=false;}
 }
 
 export async function handleSurvivalInteraction(interaction) {
@@ -945,6 +949,7 @@ export async function handleSurvivalInteraction(interaction) {
     return interaction.reply({ content: '❌ Esta expedição não existe mais.', ephemeral: true });
   }
 
+  if(game.resolving)return interaction.reply({content:'A rodada está sendo resolvida. Aguarde o novo painel.',ephemeral:true});
   if (action === 'survival_biome') {
     if (game.stage !== 'lobby') return interaction.reply({ content: '❌ O bioma não pode mais ser alterado.', ephemeral: true });
     if (interaction.user.id !== game.hostId) return interaction.reply({ content: '❌ Apenas quem criou a expedição escolhe o bioma.', ephemeral: true });
@@ -996,6 +1001,7 @@ export async function handleSurvivalInteraction(interaction) {
     }
 
     if (selected === 'start') {
+      if(game.stage!=='lobby')return interaction.reply({content:'A expedição já começou.',ephemeral:true});
       if (interaction.user.id !== game.hostId) return interaction.reply({ content: '❌ Apenas quem criou a expedição pode iniciá-la.', ephemeral: true });
       if (!game.biomeKey) return interaction.reply({ content: '❌ Escolha um único bioma antes de iniciar.', ephemeral: true });
       if (game.players.size < MIN_PLAYERS) return interaction.reply({ content: `❌ São necessários pelo menos ${MIN_PLAYERS} participantes.`, ephemeral: true });
@@ -1040,6 +1046,7 @@ export async function handleSurvivalInteraction(interaction) {
   }
 
   if (action === 'survival_decision') {
+    if(choiceId!==String(game.round))return interaction.reply({content:'Esta rodada já passou. Use o painel atualizado.',ephemeral:true});
     if (selected?.startsWith('action:')) {
       const player = game.players.get(interaction.user.id);
       if (game.stage !== 'round') return interaction.reply({ content: '❌ As ações só ficam disponíveis durante uma rodada.', ephemeral: true });

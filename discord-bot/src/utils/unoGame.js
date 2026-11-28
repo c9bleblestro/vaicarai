@@ -12,7 +12,7 @@ import {
   StringSelectMenuOptionBuilder,
   TextDisplayBuilder,
 } from 'discord.js';
-import { generateUnoCard, unoColorValue } from './unoVisuals.js';
+import { generateUnoCard, generateUnoTable, unoColorValue } from './unoVisuals.js';
 
 const MAX_PLAYERS = 10;
 const STARTING_HAND_SIZE = 7;
@@ -151,9 +151,10 @@ function scheduleExpiry(game) {
   setTimeout(() => {
     const current = games.get(game.id);
     if (current !== game || current.status === 'done') return;
-    if (Date.now() - game.updatedAt < ttl) return scheduleExpiry(game);
+    const actualTtl=game.status==='playing'?GAME_TTL:LOBBY_TTL;
+    if (Date.now() - game.updatedAt < actualTtl) return scheduleExpiry(game);
     games.delete(game.id);
-  }, ttl + 1000);
+  }, ttl + 1000).unref?.();
 }
 
 function createGame(ctx) {
@@ -175,6 +176,8 @@ function createGame(ctx) {
     direction: 1,
     activeColor: null,
     pendingWild: null,
+    drawnCardId: null,
+    turnVersion: 0,
     updatedAt: Date.now(),
     notice: '',
   };
@@ -197,8 +200,7 @@ function lobbyPayload(game) {
   const playerLines = game.players.map((player, index) =>
     `${index === 0 ? '👑' : '🎴'} ${index + 1}. ${playerName(player)}`).join('\n');
   const container = new ContainerBuilder()
-    .setAccentColor(0x5865f2)
-    .addTextDisplayComponents(new TextDisplayBuilder().setContent('## 🎴 UNO TCG'))
+    .addTextDisplayComponents(new TextDisplayBuilder().setContent('## 🎴 SUBSTANCY • UNO\n-# Mesa multiplayer · 2 a 10 jogadores'))
     .addSeparatorComponents(new SeparatorBuilder())
     .addTextDisplayComponents(new TextDisplayBuilder().setContent(
       `**Sala de espera**\nCriada por **${playerName(game.players[0])}**\n\n` +
@@ -218,6 +220,9 @@ function lobbyPayload(game) {
           .setEmoji('🎴')
           .setStyle(ButtonStyle.Success)
           .setDisabled(game.players.length >= MAX_PLAYERS),
+        new ButtonBuilder()
+          .setCustomId(`uno_leave:${game.id}`)
+          .setLabel('Sair da mesa').setStyle(ButtonStyle.Secondary),
         new ButtonBuilder()
           .setCustomId(`uno_start:${game.id}`)
           .setLabel('Começar partida')
@@ -245,7 +250,7 @@ function startGame(game) {
   }
 
   let first = drawOne(game);
-  while (first?.color === 'wild') {
+  while (first && first.kind !== 'number') {
     game.deck.unshift(first);
     first = drawOne(game);
   }
@@ -272,7 +277,7 @@ function boardText(game, notice = '') {
     `**Cor ativa:** ${UNO_COLORS[game.activeColor]?.emoji ?? '⚫'} ${UNO_COLORS[game.activeColor]?.label ?? 'Preta'}`,
     `**Vez:** ${playerName(turn)}  ·  sentido ${direction}`,
     '',
-    `**Cartas na mesa**\n${counts}`,
+    `**Mãos dos jogadores**\n${counts}`,
     '',
     notice || game.notice || `Clique em **Minha mão** para jogar quando for sua vez.${pending}`,
   ].join('\n');
@@ -281,9 +286,8 @@ function boardText(game, notice = '') {
 async function boardPayload(game, notice = '') {
   const top = game.discard.at(-1);
   const filename = `uno-${game.id}-${top.id}.png`;
-  const image = await generateUnoCard(top);
+  const image = await generateUnoTable(top,{color:game.activeColor,players:game.players.map(p=>({name:playerName(p),count:p.hand.length,active:p.id===currentPlayer(game)?.id})),direction:game.direction});
   const container = new ContainerBuilder()
-    .setAccentColor(unoColorValue(game.activeColor))
     .addMediaGalleryComponents(
       new MediaGalleryBuilder().addItems(
         new MediaGalleryItemBuilder().setURL(`attachment://${filename}`),
@@ -345,16 +349,16 @@ async function winnerPayload(game, winner, card) {
 }
 
 function handOptions(game, player) {
-  const options = playableCards(game, player).slice(0, 24).map(card =>
+  const options = playableCards(game, player).filter(card=>!game.drawnCardId||card.id===game.drawnCardId).slice(0, 24).map(card =>
     new StringSelectMenuOptionBuilder()
       .setLabel(cardLabel(card).slice(0, 100))
       .setDescription(cardDescription(card).slice(0, 100))
       .setValue(card.id));
   options.push(
     new StringSelectMenuOptionBuilder()
-      .setLabel('Comprar uma carta')
-      .setDescription('Compre uma carta; se ela não servir, sua vez passa')
-      .setValue('draw'),
+      .setLabel(game.drawnCardId?'Passar a vez':'Comprar uma carta')
+      .setDescription(game.drawnCardId?'Não jogar a carta comprada':'Compre uma carta; se ela não servir, sua vez passa')
+      .setValue(game.drawnCardId?'pass':'draw'),
   );
   return options.slice(0, 25);
 }
@@ -381,7 +385,7 @@ function handPayload(game, player, notice = '') {
   if (isTurn) {
     components.push(new ActionRowBuilder().addComponents(
       new StringSelectMenuBuilder()
-        .setCustomId(`uno_hand:${game.id}`)
+        .setCustomId(`uno_hand:${game.id}:${game.turnVersion}`)
         .setPlaceholder('Escolha uma carta para jogar')
         .addOptions(handOptions(game, player)),
     ));
@@ -426,7 +430,7 @@ function rulesPayload() {
     .addTextDisplayComponents(new TextDisplayBuilder().setContent(
       '## 📖 Como jogar UNO TCG\n\n' +
       '• Jogue uma carta da mesma **cor**, **número** ou **símbolo** da carta na mesa.\n' +
-      '• Se não quiser ou não puder jogar, compre uma carta. Se ela servir, você pode jogá-la.\n' +
+      '• Compre apenas uma carta por turno. Se ela servir, jogue somente essa carta ou passe.\n' +
       '• **Pular** passa a vez do próximo jogador.\n' +
       '• **Inverter** muda o sentido da rodada; com 2 jogadores, funciona como Pular.\n' +
       '• **+2** faz o próximo jogador comprar 2 e perder a vez.\n' +
@@ -448,6 +452,8 @@ function finishGame(game, winner) {
 }
 
 function advanceAfterCard(game, card) {
+  game.drawnCardId=null;
+  game.turnVersion++;
   if (card.kind === 'reverse') {
     if (game.players.length > 2) game.direction *= -1;
     game.turnIndex = nextIndex(game, 1);
@@ -518,13 +524,13 @@ export async function startUno(ctx, send) {
   if (active) return send(v2Notice('❌ Já existe uma mesa de UNO ativa neste canal.', false));
 
   const game = createGame(ctx);
-  const message = await send(lobbyPayload(game));
+  try{const message = await send(lobbyPayload(game));
   if (message?.id) game.messageId = message.id;
-  return message;
+  return message;}catch(error){games.delete(game.id);throw error;}
 }
 
 export async function handleUnoInteraction(interaction) {
-  const [action, id] = interaction.customId.split(':');
+  const [action, id, version] = interaction.customId.split(':');
   const game = gameForInteraction(interaction, id);
   if (!game) return interaction.reply(v2Notice('❌ Esta mesa de UNO não está mais ativa.'));
 
@@ -545,7 +551,12 @@ export async function handleUnoInteraction(interaction) {
     return interaction.update(lobbyPayload(game));
   }
 
+  if(action==='uno_leave'){
+    if(game.status!=='lobby'||!player||userId===game.hostId)return interaction.reply(v2Notice('Só participantes que não são anfitriões podem sair da sala de espera.'));
+    game.players=game.players.filter(p=>p.id!==userId);touch(game);return interaction.update(lobbyPayload(game));
+  }
   if (action === 'uno_start') {
+    if(game.status!=='lobby')return interaction.reply(v2Notice('A partida já começou.'));
     if (game.hostId !== userId) return interaction.reply(v2Notice('❌ Só o anfitrião pode começar.'));
     if (game.players.length < 2) return interaction.reply(v2Notice('❌ Entre com pelo menos mais uma pessoa.'));
     startGame(game);
@@ -555,6 +566,7 @@ export async function handleUnoInteraction(interaction) {
   }
 
   if (action === 'uno_cancel') {
+    if(game.status!=='lobby')return interaction.reply(v2Notice('A partida já começou.'));
     if (game.hostId !== userId) return interaction.reply(v2Notice('❌ Só o anfitrião pode cancelar.'));
     games.delete(game.id);
     return interaction.update({
@@ -571,7 +583,8 @@ export async function handleUnoInteraction(interaction) {
   if (!player) return interaction.reply(v2Notice('❌ Você não participa desta partida.'));
 
   if (action === 'uno_hand') {
-    if (interaction.isButton()) return interaction.reply(handPayload(game, player));
+    if (interaction.isButton()) return interaction.reply(game.pendingWild?.playerId===userId?colorPayload(game):handPayload(game, player));
+    if(version!==String(game.turnVersion))return interaction.reply(v2Notice('Esta mão está desatualizada. Abra Minha mão novamente.'));
 
     if (player.id !== currentPlayer(game).id) {
       return interaction.update(handPayload(game, player, `⏳ Aguarde a vez de **${playerName(currentPlayer(game))}**.`));
@@ -579,11 +592,19 @@ export async function handleUnoInteraction(interaction) {
     if (game.pendingWild) return interaction.update(colorPayload(game));
 
     const selected = interaction.values?.[0];
+    if(selected==='pass'){
+      if(!game.drawnCardId)return interaction.reply(v2Notice('Compre uma carta antes de passar.'));
+      game.drawnCardId=null;game.turnVersion++;game.turnIndex=nextIndex(game);touch(game);
+      await interaction.update(handPayload(game,player,'Você passou a vez.'));
+      return editPublicBoard(interaction,game,`${playerName(player)} passou a vez.`);
+    }
     if (selected === 'draw') {
+      if(game.drawnCardId)return interaction.reply(v2Notice('Você já comprou neste turno. Jogue a carta comprada ou passe.'));
       const card = drawOne(game);
       if (card) player.hand.push(card);
       const canPlay = card && canPlayCard(card, game, player);
       if (!canPlay) {
+        game.drawnCardId=null;game.turnVersion++;
         game.turnIndex = nextIndex(game, 1);
         touch(game);
         const privatePayload = handPayload(game, player, 'Você comprou e passou a vez.');
@@ -591,6 +612,7 @@ export async function handleUnoInteraction(interaction) {
         await editPublicBoard(interaction, game, `🃏 ${playerName(player)} comprou uma carta e passou a vez.`);
         return;
       }
+      game.drawnCardId=card.id;game.turnVersion++;
       touch(game);
       const privatePayload = handPayload(
         game,
@@ -598,12 +620,13 @@ export async function handleUnoInteraction(interaction) {
         `Você comprou **${cardLabel(card)}** e pode jogar.`,
       );
       await interaction.update(privatePayload);
-      await editPublicBoard(interaction, game, `🃏 Você comprou **${cardLabel(card)}**. Ela pode ser jogada.`);
+      await editPublicBoard(interaction, game, `🃏 ${playerName(player)} comprou uma carta e está decidindo se joga ou passa.`);
       return;
     }
 
     const card = player.hand.find(candidate => candidate.id === selected);
     if (!card) return interaction.reply(v2Notice('❌ Essa carta não está na sua mão.'));
+    if(game.drawnCardId&&game.drawnCardId!==card.id)return interaction.reply(v2Notice('Após comprar, jogue somente a carta comprada ou passe.'));
     if (!canPlayCard(card, game, player)) return interaction.reply(v2Notice('❌ Essa carta não combina com a mesa.'));
 
     if (card.color === 'wild') {
@@ -661,9 +684,6 @@ export async function handleUnoInteraction(interaction) {
   }
 
   if (action === 'uno_call') {
-    if (player.id !== currentPlayer(game).id) {
-      return interaction.reply(v2Notice(`⏳ Aguarde a vez de **${playerName(currentPlayer(game))}**.`));
-    }
     if (player.hand.length !== 1) {
       return interaction.reply(v2Notice('📣 O botão UNO só pode ser usado com uma carta na mão.'));
     }

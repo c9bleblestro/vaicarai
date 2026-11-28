@@ -201,8 +201,8 @@ function buildBJStatusText(state, hideDealer) {
   if (state.status === 'playing') {
     const upCard = state.dealer[0];
     return (
-      `## Blackjack • sua vez\n` +
-      `Sua mão está em **${pTotal}** e o dealer mostra **${upCard.rank}${upCard.suit}**.\n` +
+      `## 🃏 BLACKJACK · SUA MÃO\n` +
+      `**Sua mão:** ${fmtHand(state.player)} · **${pTotal}** pontos\n**Dealer:** ${fmtCard(upCard)} · carta oculta\n` +
       `Aposta: **${fmtNum(state.bet)} coins** • Movimentos: **${state.moves ?? 0}**\n` +
       `${state.insuranceTaken ? `Seguro ativo: **${fmtNum(state.insurance)} coins**\n` : ''}` +
       `${upCard.rank === 'A' && !state.insuranceTaken ? 'O dealer mostra um Ás: você pode contratar seguro antes de jogar.\n' : ''}` +
@@ -546,7 +546,7 @@ function buildCrashText(state) {
   const crashPoint = Number(state.crashAt).toFixed(2).replace('.', ',');
 
   if (state.status === 'playing') {
-    return `**CRASH · ${multiplier}x** · retorno ${fmtNum(crashPayout(state))} coins`;
+    return `## Crash · rodada em andamento\n**Multiplicador:** ${multiplier}x  •  **Retorno atual:** ${fmtNum(crashPayout(state))} coins`;
   }
 
   if (state.status === 'cashed') {
@@ -743,7 +743,7 @@ function penaltyStatusText(state) {
   const round = Math.min(state.round + 1, PENALTY_ROUNDS);
 
   if (state.status === 'choosing') {
-    return `**PÊNALTIS · cobrança ${round}/${PENALTY_ROUNDS}** · saque ${payout} coins`;
+    return `## ⚽ Pênaltis · cobrança ${round}/${PENALTY_ROUNDS}\n**Placar:** ${state.goals}/${PENALTY_ROUNDS} gols · **Retorno atual:** ${payout} coins\nEscolha a direção da cobrança.`;
   }
 
   if (state.status === 'goal') {
