@@ -341,7 +341,7 @@ async function battlePayload(battle, extra = '') {
 
 async function updateBattle(interaction, battle, extra = '') {
   await interaction.deferUpdate();
-  return interaction.editReply(await battlePayload(battle, extra));
+  return interaction.editReply({attachments:[],...await battlePayload(battle, extra)});
 }
 
 function availableSwitches(side) {

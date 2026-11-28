@@ -1,168 +1,28 @@
-import { createCanvas, loadImage } from '@napi-rs/canvas';
-import { readFile } from 'node:fs/promises';
-import path from 'node:path';
-import { fileURLToPath } from 'node:url';
-import { CARD_DEFS } from './cardData.js';
-import { generateCardSheet } from './cardVisuals.js';
-
-const ARENA_FILE = path.join(path.dirname(fileURLToPath(import.meta.url)), '../assets/cards/battle-arena-bg.jpg');
-const HEALTH_BAR_FILE = path.join(path.dirname(fileURLToPath(import.meta.url)), '../assets/cards/battle-health-bar.jpg');
-const WIDTH = 1280;
-const HEIGHT = 760;
-
-function roundedRect(ctx, x, y, width, height, radius) {
-  ctx.beginPath();
-  ctx.roundRect(x, y, width, height, radius);
+import {loadImage} from '@napi-rs/canvas';
+import {scene,box,txt,gradient,ellipse,png,noise} from './gameArt.js';
+import {generateCardSheet} from './cardVisuals.js';
+const species={'Mega Charizard X':10034,'Mega Charizard Y':10035,'Mega Charizard':10034,'Mega Gengar':10038,'Mega Ampharos':10045,'Mega Blaziken':10050,'Mega Gardevoir':10051,'Mega Lucario':10059,'Mega Greninja':658,'Mega Darkrai':491,'Mega Dragonite':149,'Mega Froslass':478,'Mega Zygarde':718,'Tapu Koko':785,'Cauda Brado':987,'Ho-Oh':250,Mewtwo:150,Mew:151,Pikachu:25,Eevee:133,Lunala:792,Gyarados:130,Arceus:493,Ivysaur:2,Charmander:4,Gengar:94,Jigglypuff:39,Squirtle:7,Haunter:93,Charmeleon:5,Meowth:52,Flareon:136,Cinccino:573,Raboot:814,Azumarill:184,Rowlet:722,Machop:66,Wartortle:8,Turtwig:387,Diglett:50,Torracat:726,Dratini:147,Feraligatr:160,Piplup:393,Reuniclus:579,Vaporeon:134,Venusaur:3,Pichu:172,Alakazam:65,Carvanha:318,Scizor:212,Greninja:658,Ekans:23,Shellder:90,Sceptile:254,Latias:380,Deoxys:386,Zekrom:644,Mimikyu:778,Gardevoir:282,Salamence:373};
+export const spriteId=name=>species[Object.keys(species).sort((a,b)=>b.length-a.length).find(k=>String(name).startsWith(k))]??null;
+const cache=new Map();
+async function art(p){
+ const id=spriteId(p.card.name);
+ if(id){if(!cache.has(id)){cache.set(id,(async()=>{try{return await loadImage(new URL('../assets/battle-sprites/'+id+'.png',import.meta.url).pathname);}catch{return null;}})());}const im=await cache.get(id);if(im)return {im,sprite:true};}
+ return {im:await loadImage(await generateCardSheet([p.card])),sprite:false};
 }
-
-function fitImage(ctx, image, x, y, width, height, radius = 18) {
-  ctx.save();
-  roundedRect(ctx, x, y, width, height, radius);
-  ctx.clip();
-  // generateCardSheet coloca a carta em (24, 24), no tamanho original
-  // de 358x500. Recortamos somente essa carta para preservar a frente
-  // exatamente como ela aparece no pack e na Pokédex.
-  const sourceX = image.width >= 406 && image.height >= 548 ? 24 : 0;
-  const sourceY = sourceX;
-  const sourceWidth = image.width >= 406 && image.height >= 548 ? 358 : image.width;
-  const sourceHeight = image.width >= 406 && image.height >= 548 ? 500 : image.height;
-  ctx.drawImage(image, sourceX, sourceY, sourceWidth, sourceHeight, x, y, width, height);
-  ctx.restore();
+function landscape(ctx){
+ ctx.fillStyle=gradient(ctx,0,0,0,675,[[0,'#64b3e0'],[.48,'#d4edf1'],[.49,'#a7cf76'],[1,'#568c48']]);ctx.fillRect(0,0,1200,675);
+ for(let i=0;i<6;i++){let x=i*250-40,y=80+(i%2)*54;for(let j=0;j<4;j++)ellipse(ctx,x+j*43,y+(j%2)*12,55,20,'#ffffffbb');}
+ for(let i=0;i<2;i++){ctx.beginPath();ctx.moveTo(0,350);for(let j=0;j<13;j++)ctx.lineTo(j*100,180+i*65+((j*73+i*17)%110));ctx.lineTo(1200,390);ctx.closePath();ctx.fillStyle=i?'#73ac88':'#689db0';ctx.fill();}
+ ctx.fillStyle='#c0d5c1';ctx.fillRect(0,310,1200,77);for(let i=0;i<12;i++){box(ctx,i*110+12,320,88,62,32,'#6b9c83');box(ctx,i*110+3,300,13,89,3,'#e2e8d4');}
+ const grass=gradient(ctx,0,390,0,285,[[0,'#b2d77f'],[1,'#659b45']]);ctx.fillStyle=grass;ctx.fillRect(0,390,1200,285);noise(ctx,0,390,1200,285,79,22000);
+ for(let i=0;i<100;i++){let x=(i*131)%1200,y=390+(i*73)%285;ctx.strokeStyle='#457b3f55';ctx.beginPath();ctx.moveTo(x,y+8);ctx.lineTo(x-3,y);ctx.moveTo(x,y+8);ctx.lineTo(x+5,y-3);ctx.stroke();}
+ ellipse(ctx,805,430,260,57,'#acd19a','#ebefc4',4);ellipse(ctx,310,560,265,65,'#9dc888','#ebefc4',4);
 }
-
-function healthBar(ctx, texture, x, y, width, value, max) {
-  const height = 34;
-  const ratio = Math.max(0, Math.min(1, value / Math.max(1, max)));
-
-  // Usa a moldura dourada da referência e redesenha somente o interior,
-  // permitindo que a quantidade vermelha acompanhe o HP real da batalha.
-  ctx.drawImage(texture, 0, 38, texture.width, 112, x, y, width, height);
-  ctx.save();
-  roundedRect(ctx, x + 23, y + 8, width - 46, height - 16, 9);
-  ctx.clip();
-  const empty = ctx.createLinearGradient(x, y, x, y + height);
-  empty.addColorStop(0, '#4b5563');
-  empty.addColorStop(0.5, '#1f2937');
-  empty.addColorStop(1, '#111827');
-  ctx.fillStyle = empty;
-  ctx.fillRect(x + 18, y + 5, width - 36, height - 10);
-  if (ratio > 0) {
-    const fill = ctx.createLinearGradient(x, y, x, y + height);
-    fill.addColorStop(0, '#ff6b4a');
-    fill.addColorStop(0.45, '#ef2f16');
-    fill.addColorStop(1, '#a30f08');
-    ctx.fillStyle = fill;
-    ctx.fillRect(x + 18, y + 5, (width - 36) * ratio, height - 10);
-    ctx.fillStyle = 'rgba(255, 255, 255, .24)';
-    ctx.fillRect(x + 18, y + 7, (width - 36) * ratio, 3);
-  }
-  ctx.restore();
+function creature(ctx,p,a,x,y,w,h,flip){const {im,sprite}=a;ctx.save();if(sprite){const k=Math.min(w/im.width,h/im.height),iw=im.width*k,ih=im.height*k;ellipse(ctx,x,y+3,iw*.36,18,'#335d3055');ctx.translate(x,y);if(flip)ctx.scale(-1,1);ctx.drawImage(im,-iw/2,-ih,iw,ih);}else{const k=Math.min(w/im.width,h/im.height);ctx.drawImage(im,x-im.width*k/2,y-im.height*k,im.width*k,im.height*k);}ctx.restore();}
+function hud(ctx,p,x,y){
+ box(ctx,x,y,470,114,14,'#f4f4e8','#568b83',3);txt(ctx,p.card.name,x+18,y+24,22,'#19363b',true,'left',340);txt(ctx,'CP '+p.cp,x+453,y+24,16,'#28535a',true,'right',100);
+ for(const [i,label,value,max,cl] of [[0,'HP',Math.max(0,p.hp),p.maxHp,p.hp/p.maxHp>.5?'#76b94c':p.hp/p.maxHp>.2?'#e2b841':'#d96355'],[1,'EN',p.energy,100,'#39a9d3']]){let yy=y+57+i*31;txt(ctx,label,x+18,yy,17,'#29454a');box(ctx,x+64,yy-8,255,16,8,'#cfdbd3');const r=Math.max(0,Math.min(1,value/Math.max(1,max)));if(r>0)box(ctx,x+64,yy-8,255*r,16,Math.min(8,255*r/2),cl);txt(ctx,value+'/'+max,x+450,yy,17,'#29454a',true,'right');}
 }
-
-async function loadCard(card) {
-  const source = card.card || card;
-  const canonical = CARD_DEFS.find(entry => entry.key === source.key);
-  const sourceCard = canonical || source;
-  return loadImage(await generateCardSheet([sourceCard]));
-}
-
-function drawCard(ctx, pokemon, image, x, y, accent, label, flipped = false, healthBarImage) {
-  const width = 330;
-  const height = 462;
-  const frameX = x - 14;
-  const frameY = y - 14;
-
-  ctx.save();
-  ctx.shadowColor = 'rgba(0, 0, 0, .6)';
-  ctx.shadowBlur = 28;
-  ctx.shadowOffsetY = 14;
-  roundedRect(ctx, frameX, frameY, width + 28, height + 28, 25);
-  ctx.fillStyle = '#0b1220';
-  ctx.fill();
-  ctx.restore();
-
-  ctx.save();
-  ctx.lineWidth = 6;
-  ctx.strokeStyle = accent;
-  roundedRect(ctx, frameX, frameY, width + 28, height + 28, 25);
-  ctx.stroke();
-  ctx.restore();
-
-  fitImage(ctx, image, x, y, width, height, 16);
-
-  ctx.fillStyle = accent;
-  ctx.font = '900 18px sans-serif';
-  ctx.fillText(label.toUpperCase(), x, y - 30);
-  ctx.fillStyle = '#ffffff';
-  ctx.font = 'bold 23px sans-serif';
-  ctx.fillText(pokemon.card.name.slice(0, 24), x, y + height + 38);
-  ctx.fillStyle = '#cbd5e1';
-  ctx.font = '16px sans-serif';
-  ctx.fillText(`${pokemon.card.element}  •  CP ${pokemon.cp}`, x, y + height + 64);
-  healthBar(ctx, healthBarImage, x, y + height + 72, width, pokemon.hp, pokemon.maxHp);
-  ctx.fillStyle = '#94a3b8';
-  ctx.font = '14px sans-serif';
-  ctx.fillText(`Energia ${pokemon.energy}/100`, x + 195, y + height + 118);
-}
-
-export async function generateBattleBoard(first, second, turnName = '') {
-  const canvas = createCanvas(WIDTH, HEIGHT);
-  const ctx = canvas.getContext('2d');
-  const [arenaImage, healthBarImage, firstImage, secondImage] = await Promise.all([
-    loadImage(await readFile(ARENA_FILE)),
-    loadImage(await readFile(HEALTH_BAR_FILE)),
-    loadCard(first),
-    loadCard(second),
-  ]);
-  const scale = Math.max(WIDTH / arenaImage.width, HEIGHT / arenaImage.height);
-  const arenaWidth = arenaImage.width * scale;
-  const arenaHeight = arenaImage.height * scale;
-  ctx.drawImage(
-    arenaImage,
-    (WIDTH - arenaWidth) / 2,
-    (HEIGHT - arenaHeight) / 2,
-    arenaWidth,
-    arenaHeight,
-  );
-  ctx.fillStyle = 'rgba(5, 15, 35, .28)';
-  ctx.fillRect(0, 0, WIDTH, HEIGHT);
-
-  ctx.fillStyle = 'rgba(255,255,255,.035)';
-  for (let x = 0; x < WIDTH; x += 52) ctx.fillRect(x, 0, 2, HEIGHT);
-  for (let y = 0; y < HEIGHT; y += 52) ctx.fillRect(0, y, WIDTH, 2);
-
-  ctx.fillStyle = '#f8fafc';
-  ctx.font = '900 28px sans-serif';
-  ctx.fillText('POKÉMON CARD BATTLE', 38, 42);
-  ctx.fillStyle = '#bfdbfe';
-  ctx.font = '14px sans-serif';
-  ctx.fillText('ARENA PVP  •  ESCOLHA O GOLPE DA CARTA ATIVA', 40, 66);
-  ctx.textAlign = 'right';
-  ctx.fillStyle = '#fde68a';
-  ctx.font = 'bold 16px sans-serif';
-  ctx.fillText(turnName ? `VEZ DE ${turnName.toUpperCase()}` : 'BATALHA ATIVA', WIDTH - 40, 49);
-  ctx.textAlign = 'left';
-
-  drawCard(ctx, first, firstImage, 74, 128, '#38bdf8', 'Treinador 1', false, healthBarImage);
-  drawCard(ctx, second, secondImage, WIDTH - 404, 128, '#fb7185', 'Treinador 2', false, healthBarImage);
-
-  const centerX = WIDTH / 2;
-  const centerY = 360;
-  ctx.beginPath();
-  ctx.arc(centerX, centerY, 98, 0, Math.PI * 2);
-  ctx.fillStyle = 'rgba(2, 6, 23, .72)';
-  ctx.fill();
-  ctx.lineWidth = 4;
-  ctx.strokeStyle = '#64748b';
-  ctx.stroke();
-  ctx.fillStyle = '#f8fafc';
-  ctx.textAlign = 'center';
-  ctx.font = '900 42px sans-serif';
-  ctx.fillText('VS', centerX, centerY + 13);
-  ctx.font = 'bold 13px sans-serif';
-  ctx.fillStyle = '#fde68a';
-  ctx.fillText('CARD ARENA', centerX, centerY + 42);
-  ctx.textAlign = 'left';
-
-  return canvas.toBuffer('image/png');
+export async function generateBattleBoard(first,second,turnName=''){
+ const [c,ctx]=scene();landscape(ctx);const [a,b]=await Promise.all([art(first),art(second)]);creature(ctx,second,b,815,432,330,300,false);creature(ctx,first,a,315,563,420,370,true);hud(ctx,second,705,22);hud(ctx,first,705,535);box(ctx,24,23,390,44,14,'#e9f2e6ed','#568b83');txt(ctx,'Vez de '+turnName,42,45,21,'#234b50',true,'left',353);return png(c);
 }

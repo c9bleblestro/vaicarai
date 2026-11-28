@@ -523,153 +523,28 @@ export function generateMinesCard({ grid, revealed, bombs, bet, payout, memberNa
 // The attached design is the fixed board. Only the cards and totals are redrawn
 // on each action so the game keeps the user's visual layout throughout the hand.
 
-export async function generateBlackjackCard({
-  playerCards,
-  dealerCards,
-  pTotal,
-  dTotal,
-  hideDealer = false,
-  status = 'playing',
-  result = null,
-  payout = 0,
-}) {
-  const template = await loadImage(_blackjackDesignPath);
-  const W = template.width;
-  const H = template.height;
-  const canvas = createCanvas(W, H);
-  const ctx = canvas.getContext('2d');
-  ctx.drawImage(template, 0, 0, W, H);
-
-  function coverDynamicZone(x, y, w, h) {
-    const bg = ctx.createLinearGradient(x, y, x + w, y + h);
-    bg.addColorStop(0, '#080a0d');
-    bg.addColorStop(0.5, '#101216');
-    bg.addColorStop(1, '#090b0f');
-    ctx.fillStyle = bg;
-    ctx.fillRect(x, y, w, h);
-  }
-
-  // Remove the example cards/text from the reference image while preserving
-  // the decorative artwork, borders, labels and header.
-  coverDynamicZone(420, 230, 760, 250);
-  coverDynamicZone(330, 600, 930, 260);
-
-  function drawValueBadge(y, value, hidden) {
-    const x = 1240;
-    const w = 320;
-    ctx.fillStyle = '#080a0d';
-    roundRect(ctx, x, y, w, 78, 35);
-    ctx.fill();
-
-    const valueText = hidden ? '?' : String(value);
-    ctx.textBaseline = 'middle';
-    ctx.textAlign = 'left';
-    ctx.font = `bold 29px ${FONT}`;
-    ctx.fillStyle = '#FFFFFF';
-    ctx.fillText('Valor:', x + 35, y + 41);
-    ctx.fillStyle = '#ff234b';
-    ctx.fillText(valueText, x + 184, y + 41);
-    ctx.textBaseline = 'alphabetic';
-  }
-
-  drawValueBadge(222, dTotal, hideDealer);
-  drawValueBadge(553, pTotal, false);
-
-  function drawCardBackMatchingDesign(ctx, x, y, scale) {
-    const cw = Math.round(78 * scale);
-    const ch = Math.round(108 * scale);
-    const cr = Math.round(10 * scale);
-    ctx.save();
-    ctx.shadowColor = 'rgba(226, 15, 57, 0.35)';
-    ctx.shadowBlur = 14;
-    ctx.shadowOffsetY = 4;
-    ctx.fillStyle = '#14161b';
-    roundRect(ctx, x, y, cw, ch, cr);
-    ctx.fill();
-    ctx.shadowColor = 'transparent';
-    ctx.shadowBlur = 0;
-    ctx.strokeStyle = '#e21b45';
-    ctx.lineWidth = Math.max(1, 2 * scale);
-    roundRect(ctx, x, y, cw, ch, cr);
-    ctx.stroke();
-    ctx.strokeStyle = 'rgba(255,255,255,0.24)';
-    ctx.lineWidth = Math.max(1, scale);
-    roundRect(ctx, x + 6 * scale, y + 6 * scale, cw - 12 * scale, ch - 12 * scale, cr - 3 * scale);
-    ctx.stroke();
-    drawSuit(ctx, x + cw / 2, y + ch / 2, '♠', Math.round(24 * scale), 'rgba(226, 15, 57, 0.35)');
-    ctx.restore();
-  }
-
-  function drawHand(cards, panelY, hideSecond = false) {
-    const areaX = 300;
-    const areaW = 1000;
-    const baseScale = 1.9;
-    const minGap = 20;
-    const safeCount = Math.max(cards.length, 1);
-    const scale = Math.min(
-      baseScale,
-      (areaW - Math.max(0, safeCount - 1) * minGap) / (78 * safeCount),
-    );
-    const cardW = 78 * scale;
-    const cardH = 108 * scale;
-    const gap = safeCount > 1
-      ? Math.max(minGap, Math.min(20, (areaW - safeCount * cardW) / (safeCount - 1)))
-      : 0;
-    const totalW = safeCount * cardW + Math.max(0, safeCount - 1) * gap;
-    const startX = areaX + (areaW - totalW) / 2;
-    const cardY = panelY;
-
-    cards.forEach((card, index) => {
-      const x = Math.round(startX + index * (cardW + gap));
-      if (hideSecond && index === 1) {
-        drawCardBackMatchingDesign(ctx, x, cardY, scale);
-      } else {
-        drawCard(ctx, x, cardY, card.rank, card.suit, scale);
-      }
-    });
-  }
-
-  const dealerDisplay = hideDealer && dealerCards.length > 1
-    ? [dealerCards[0], dealerCards[1]]
-    : dealerCards;
-  drawHand(dealerDisplay, 250, hideDealer);
-  drawHand(playerCards, 618);
-  if (status !== 'playing') {
-    const resultData = result === 'blackjack'
-      ? { label: 'BLACKJACK!', color: '#f8c24a' }
-      : result === 'win'
-        ? { label: 'VITÓRIA!', color: '#43d17c' }
-        : result === 'tie'
-          ? { label: 'EMPATE', color: '#55b8ed' }
-          : result === 'bust'
-            ? { label: 'BUST!', color: '#ff5270' }
-              : result === 'dealer_blackjack'
-                ? { label: 'DEALER BLACKJACK', color: '#ff5270' }
-            : { label: 'DERROTA', color: '#ff5270' };
-    const x = 1210;
-    const y = 808;
-    const w = 340;
-    const h = 64;
-    ctx.save();
-    ctx.fillStyle = 'rgba(5, 7, 10, 0.94)';
-    roundRect(ctx, x, y, w, h, 28);
-    ctx.fill();
-    ctx.strokeStyle = resultData.color;
-    ctx.lineWidth = 3;
-    roundRect(ctx, x, y, w, h, 28);
-    ctx.stroke();
-    ctx.textAlign = 'center';
-    ctx.textBaseline = 'middle';
-    ctx.fillStyle = resultData.color;
-    ctx.font = `bold 25px ${FONT}`;
-    ctx.fillText(resultData.label, x + w / 2, y + 24);
-    ctx.fillStyle = '#FFFFFF';
-    ctx.font = `bold 14px ${FONT}`;
-    ctx.fillText(`Retorno: ${fmt(payout)} coins`, x + w / 2, y + 47);
-    ctx.restore();
-  }
-
-  return canvas.toBuffer('image/png');
+import {scene as bjScene,table as bjTable,txt as bjText,box as bjBox,avatar as bjAvatar,cardBack as bjBack,png as bjPng,coins as bjCoins} from './gameArt.js';
+export async function generateBlackjackCard({playerCards,dealerCards,pTotal,dTotal,hideDealer=false,status='playing',result=null,payout=0,bet=0,name='',avatar=null}){
+ const [canvas,ctx]=bjScene();bjTable(ctx,'green');
+ bjText(ctx,'Substancy',34,25,20,'#d3bd93');bjText(ctx,'BLACKJACK',34,65,40,'#f6e6ca');
+ bjBox(ctx,895,23,270,65,12,'#171918','#aa8854');bjText(ctx,'Aposta',914,44,15,'#d8c5a3',false);bjText(ctx,bjCoins(bet)+' coins',914,67,24);
+ bjText(ctx,'DEALER',600,106,19,'#f2dbb0',true,'center');
+ function hand(cards,y,hide){
+  const n=cards.length,scale=Math.min(1.42,660/(Math.max(1,n)*78+Math.max(0,n-1)*13)),w=78*scale,h=108*scale,gap=13;
+  const x=600-(n*w+(n-1)*gap)/2;
+  cards.forEach((card,i)=>{const xx=x+i*(w+gap);if(hide&&i>0)bjBack(ctx,xx,y,w,h,'#c6a16a');else drawCard(ctx,xx,y,card.rank,card.suit,scale);});
+  return y+h;
+ }
+ const d=hand(dealerCards,130,hideDealer);
+ bjBox(ctx,544,d+9,112,37,18,'#101a16','#be9a61');bjText(ctx,hideDealer?'?':dTotal,600,d+27,24,'#fff',true,'center');
+ bjText(ctx,'SUA MÃO',600,363,19,'#f2dbb0',true,'center');
+ const p=hand(playerCards,382,false);bjBox(ctx,544,p+9,112,37,18,'#101a16','#be9a61');bjText(ctx,pTotal,600,p+27,24,'#fff',true,'center');
+ await bjAvatar(ctx,avatar,125,356,50,name,'#d1a76a');bjText(ctx,name||'Jogador',190,343,22,'#fff',true,'left',240);bjText(ctx,'Sua mão',190,371,16,'#d6c7a8',false);
+ if(status!=='playing'){
+  const label={blackjack:'BLACKJACK!',win:'VITÓRIA',tie:'EMPATE',bust:'ESTOUROU',dealer_blackjack:'BLACKJACK DO DEALER'}[result]??'DERROTA';
+  bjBox(ctx,822,320,340,97,14,'#101818ed','#be9a61');bjText(ctx,label,992,351,23,'#f5dfb5',true,'center',310);bjText(ctx,'Retorno: '+bjCoins(payout)+' coins',992,389,19,'#fff',false,'center');
+ }
+ return bjPng(canvas);
 }
 
 // ─── Canvas-drawn economy icons ───────────────────────────────────────────────

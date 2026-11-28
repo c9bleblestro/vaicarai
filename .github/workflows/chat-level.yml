@@ -84,7 +84,18 @@ jobs:
           node --check src/utils/interactionStreak.js
           node --check src/utils/interactionStreakCard.js
           node --check src/utils/interactionStreakArt.js
+      - name: Check game renderer syntax
+        run: |
+          node --check src/utils/gameArt.js
+          node --check src/utils/gameHandlers.js
+          node --check src/utils/unoGame.js
+          node --check src/utils/unoVisuals.js
+          node --check src/utils/battleVisuals.js
+          node --check src/commands/jogos/batalha.js
+          node --check src/utils/crashCard.js
+          node --check src/utils/penaltyCard.js
+          node --check src/utils/economyCards.js
       - name: Prepare isolated test database
         run: npx prisma db push --skip-generate
       - name: Test XP rules and PNG rendering
-        run: node --test test/chatLevelMath.test.js test/chatLevelCard.test.js test/profileStatIcons.test.js test/chatLevelIntegration.test.js test/interactionStreak.test.js test/ticketPermissions.test.js test/ticketInvite.test.js test/reactionTriggers.test.js test/communityRadio.test.js test/fmTracks.test.js test/profileStudio.test.js test/economyProgress.test.js test/petWorld.test.js test/instaFeed.test.js
+        run: node --test test/gameArt.test.js test/chatLevelMath.test.js test/chatLevelCard.test.js test/profileStatIcons.test.js test/chatLevelIntegration.test.js test/interactionStreak.test.js test/ticketPermissions.test.js test/ticketInvite.test.js test/reactionTriggers.test.js test/communityRadio.test.js test/fmTracks.test.js test/profileStudio.test.js test/economyProgress.test.js test/petWorld.test.js test/instaFeed.test.js

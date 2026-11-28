@@ -1,0 +1,14 @@
+import test from 'node:test';
+import assert from 'node:assert/strict';
+import {loadImage} from '@napi-rs/canvas';
+import {generateUnoTable} from '../src/utils/unoVisuals.js';
+import {generateBlackjackCard} from '../src/utils/economyCards.js';
+import {generateCrashCard} from '../src/utils/crashCard.js';
+import {generatePenaltyCard} from '../src/utils/penaltyCard.js';
+import {generateBattleBoard,spriteId} from '../src/utils/battleVisuals.js';
+const check=async b=>{assert.equal(b.subarray(0,8).toString('hex'),'89504e470d0a1a0a');const im=await loadImage(b);assert.equal(im.width,1200);assert.equal(im.height,675);};
+test('UNO public board reacts to actual turn and card count',async()=>{const card={color:'red',kind:'number',value:7},players=[{name:'A',count:4,active:true},{name:'B',count:6}];const a=await generateUnoTable(card,{color:'red',players,direction:1});const b=await generateUnoTable(card,{color:'red',players:[{name:'A',count:3},{name:'B',count:6,active:true}],direction:-1});await check(a);assert.ok(!a.equals(b));});
+test('blackjack hidden dealer is not encoded in visible pixels',async()=>{const p={playerCards:[{rank:'K',suit:'♠'},{rank:'7',suit:'♥'}],dealerCards:[{rank:'6',suit:'♣'},{rank:'A',suit:'♥'}],pTotal:17,dTotal:17,hideDealer:true,bet:500};const a=await generateBlackjackCard(p),b=await generateBlackjackCard({...p,dealerCards:[p.dealerCards[0],{rank:'9',suit:'♠'}],dTotal:15});await check(a);assert.ok(a.equals(b));assert.ok(!a.equals(await generateBlackjackCard({...p,hideDealer:false})));});
+test('crash graphic never encodes secret future break and updates live data',async()=>{const p={multiplier:1.6,bet:500,elapsedMs:12000};const a=await generateCrashCard({...p,crashAt:2}),b=await generateCrashCard({...p,crashAt:100});await check(a);assert.ok(a.equals(b));assert.ok(!a.equals(await generateCrashCard({...p,multiplier:1.7})));});
+test('penalty renders real outcomes and hides keeper choice before shooting',async()=>{const p={round:0,goals:0,bet:500};const a=await generatePenaltyCard({...p,keeperDirection:'left'}),b=await generatePenaltyCard({...p,keeperDirection:'right'});await check(a);assert.ok(a.equals(b));assert.ok(!a.equals(await generatePenaltyCard({...p,round:1,goals:1,status:'goal',shot:'left',keeperDirection:'right',payout:640})));});
+test('Pokemon board uses equipped species and real HP / energy',async()=>{assert.equal(spriteId('Pikachu ex — Arte completa'),25);assert.equal(spriteId('Mega Charizard X ex'),10034);const a={card:{key:'pikachu-ex',name:'Pikachu ex — Arte completa',element:'Raio',rarity:'mitica'},cp:1500,hp:100,maxHp:100,energy:0};const b={...a,card:{key:'mew-vmax',name:'Mew VMAX',element:'Psíquico',rarity:'mitica'}};const x=await generateBattleBoard(a,b,'A');await check(x);assert.ok(!x.equals(await generateBattleBoard({...a,hp:40,energy:35},b,'B')));});

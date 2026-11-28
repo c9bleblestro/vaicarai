@@ -1,4 +1,5 @@
 import { createCanvas, loadImage } from '@napi-rs/canvas';
+import {scene,table,box,txt,ellipse,avatar,cardBack,png} from './gameArt.js';
 import { readFileSync } from 'fs';
 import { dirname, join } from 'path';
 import { fileURLToPath } from 'url';
@@ -303,18 +304,34 @@ export function unoColorValue(color) {
   return COLOR_VALUES[color] ?? COLOR_VALUES.wild;
 }
 
-// Public board: no hidden hand contents are rendered.
+// Public table deliberately never receives private hands.
 export async function generateUnoTable(top,{color,players,direction}){
- const c=createCanvas(960,540),ctx=c.getContext('2d');
- const g=ctx.createLinearGradient(0,0,960,540);g.addColorStop(0,'#102d30');g.addColorStop(1,'#101821');ctx.fillStyle=g;ctx.fillRect(0,0,960,540);
- const box=(x,y,w,h,r,fill,stroke)=>{ctx.beginPath();ctx.roundRect(x,y,w,h,r);ctx.fillStyle=fill;ctx.fill();if(stroke){ctx.strokeStyle=stroke;ctx.lineWidth=1.5;ctx.stroke();}};
- const text=(v,x,y,size,col='#eaf4f4',bold=false)=>{ctx.font=(bold?'bold ':'')+size+'px sans-serif';ctx.fillStyle=col;ctx.fillText(String(v),x,y);};
- box(20,20,920,500,28,'#ffffff05','#527d79');text('SUBSTANCY  /  UNO',42,62,25,'#a7e8d8',true);text('MESA MULTIPLAYER',42,88,14,'#91aaa9');
- const current=players.find(p=>p.active);text('VEZ DE '+String(current?.name??'').slice(0,24),490,62,23,'#ffffff',true);text(direction===1?'Sentido horário':'Sentido anti-horário',490,88,15,'#91aaa9');
- box(42,112,408,376,22,'#0a171c','#355553');
- box(65,133,362,48,14,COLORS[color]??COLORS.wild);text('COR ATIVA',84,163,17,color==='yellow'?'#202124':'#ffffff',true);
- const card=await loadImage(await generateUnoCard(top));ctx.drawImage(card,177,198,137,219);
- text('CARTA NA MESA',154,451,17,'#a7e8d8',true);
- players.forEach((p,i)=>{const x=477+(i%2)*225,y=112+Math.floor(i/2)*75;box(x,y,213,65,13,p.active?'#244d49':'#1a2930',p.active?'#a7e8d8':'#355553');text(String(p.name).slice(0,16),x+12,y+25,16,'#ffffff',true);text(p.count+' carta(s)'+(p.active?'  ·  VEZ':''),x+12,y+48,15,p.active?'#a7e8d8':'#b2c5c4');});
- return c.toBuffer('image/png');
+ const [c,ctx]=scene();table(ctx,'red');
+ txt(ctx,'Substancy',34,28,21,'#e6d9d7');txt(ctx,'UNO',32,66,49,'#fff',true);
+ const active=players.find(p=>p.active);txt(ctx,'VEZ DE '+(active?.name??'—'),1163,37,24,'#fff',true,'right',480);
+ txt(ctx,players.length+' jogadores  ·  '+(direction===1?'Horário':'Anti-horário'),1163,68,17,'#c4b9b8',false,'right');
+ const im=await loadImage(await generateUnoCard(top));
+ for(let i=4;i>=0;i--)cardBack(ctx,484+i*1.3,260+i*2,91,143,'#e3d8d7',true);
+ ctx.save();ctx.shadowBlur=14;ctx.shadowColor='#0009';ctx.shadowOffsetY=7;ctx.drawImage(im,608,246,100,160);ctx.restore();
+ const name={red:'Vermelho',yellow:'Amarelo',green:'Verde',blue:'Azul',wild:'Preta'}[color]??'—';
+ box(ctx,495,420,210,38,19,'#17171be8','#ffffff36');ellipse(ctx,518,439,9,9,COLORS[color]??'#888');txt(ctx,'Cor: '+name,539,439,18,'#fff');
+ const n=players.length;
+ await Promise.all(players.map(async(p,i)=>{
+  const angle=-Math.PI/2+2*Math.PI*i/n;
+  const x=600+405*Math.cos(angle),y=344+208*Math.sin(angle);
+  const avX=x-60,avY=y-4,accent=p.active?'#f3d6a2':'#a45b5c';
+  box(ctx,x-85,y-29,170,62,14,p.active?'#3a2023':'#18171bea',accent,p.active?2:1);
+  const count=Math.min(5,p.count);for(let j=0;j<count;j++){ctx.save();ctx.translate(x+(j-(count-1)/2)*13,y+44);ctx.rotate((j-(count-1)/2)*.11);cardBack(ctx,-18,-22,36,54,'#9d7472',true);ctx.restore();}
+  txt(ctx,p.name,x-35,y-10,16,'#fff',true,'left',110);txt(ctx,p.count+' carta(s)',x-35,y+12,14,p.active?'#f5d7a5':'#bfb6b4',false);
+  await avatar(ctx,p.avatar,avX,avY,26,p.name,accent);
+ }));
+ return png(c);
+}
+export async function generateUnoHand(cards){
+ const [c,ctx]=scene();ctx.fillStyle='#201518';ctx.fillRect(0,0,1200,675);txt(ctx,'MINHA MÃO',38,44,31);txt(ctx,cards.length+' cartas',1160,44,24,'#dec1bc',false,'right');
+ const shown=cards.slice(0,24),cols=Math.min(12,Math.max(1,shown.length)),rows=Math.ceil(shown.length/cols),w=Math.min(118,Math.floor(1100/cols)-7),h=w*1.6;
+ const images=await Promise.all(shown.map(card=>generateUnoCard(card).then(loadImage)));
+ images.forEach((im,i)=>ctx.drawImage(im,60+(i%cols)*(w+7),100+Math.floor(i/cols)*(h+27),w,h));
+ if(cards.length>shown.length)txt(ctx,'Mais '+(cards.length-shown.length)+' cartas na lista abaixo',38,620,22,'#e4c9be',false);
+ return png(c);
 }

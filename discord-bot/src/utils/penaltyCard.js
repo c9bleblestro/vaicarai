@@ -1,286 +1,36 @@
-import { createCanvas, GlobalFonts, loadImage } from '@napi-rs/canvas';
-import { fileURLToPath } from 'node:url';
-import { dirname, join } from 'node:path';
-import { readFileSync } from 'node:fs';
-
-const __filename = fileURLToPath(import.meta.url);
-const __dirname = dirname(__filename);
-const FONTS_DIR = join(__dirname, '../../fonts');
-const TEMPLATE_PATH = join(__dirname, '../../assets/penalty-card-template.png');
-
-GlobalFonts.register(readFileSync(join(FONTS_DIR, 'Roboto-Regular.ttf')), 'PenaltyRegular');
-GlobalFonts.register(readFileSync(join(FONTS_DIR, 'Roboto-Bold.ttf')), 'PenaltyBold');
-
-const DESIGN_W = 1024;
-const DESIGN_H = 576;
-const GOAL = { left: 230, top: 199, width: 602, height: 274 };
-const COLORS = {
-  cyan: '#61e7ff',
-  green: '#79edb1',
-  red: '#ff728b',
-  gold: '#ffd16b',
-  text: '#eff8ff',
-  muted: '#8aa4c6',
-};
-let templatePromise;
-
-function getTemplate() {
-  templatePromise ??= loadImage(TEMPLATE_PATH);
-  return templatePromise;
+import {scene,box,txt,gradient,ellipse,avatar,png,coins,noise} from './gameArt.js';
+const goal={x:255,y:185,w:690,h:295};
+const at=d=>d==='left'?goal.x+goal.w*.18:d==='right'?goal.x+goal.w*.82:600;
+function stadium(ctx){
+ ctx.fillStyle=gradient(ctx,0,0,0,675,[[0,'#071a27'],[.55,'#24465a'],[1,'#15291b']]);ctx.fillRect(0,0,1200,675);
+ for(let i=0;i<4;i++){const y=105+i*55;ctx.fillStyle=i%2?'#1b2b36':'#263b46';ctx.fillRect(0,y,1200,44);for(let j=0;j<170;j++){const x=j*7+((i*13)%7),v=(j*17+i*11)%9;ellipse(ctx,x,y+6+v*3,2.4,3.1,['#6d8795','#e2d7bd','#647583','#152431','#b8c5d0'][v%5]);}}
+ for(const x of [70,1130]){const g=ctx.createRadialGradient(x,100,1,x,100,170);g.addColorStop(0,'#ffffff70');g.addColorStop(1,'#ffffff00');ctx.fillStyle=g;ctx.fillRect(x-170,0,340,260);for(let i=0;i<6;i++)box(ctx,x-38+(i%3)*24,70+Math.floor(i/3)*13,19,9,2,'#f5fcff');}
+ ctx.fillStyle='#122b38';ctx.fillRect(0,331,1200,87);
+ const grass=gradient(ctx,0,390,0,285,[[0,'#548142'],[1,'#244c2d']]);ctx.fillStyle=grass;ctx.fillRect(0,410,1200,265);
+ for(let i=0;i<6;i++){ctx.fillStyle=i%2?'#ffffff0d':'#00000009';ctx.fillRect(0,410+i*44,1200,44);}
+ noise(ctx,0,410,1200,265,44,33000);ctx.strokeStyle='#e9f0e0';ctx.lineWidth=3;ctx.beginPath();ctx.moveTo(0,523);ctx.lineTo(1200,523);ctx.stroke();
+ ctx.fillStyle='#0a1620a8';ctx.fillRect(goal.x,goal.y,goal.w,goal.h);
+ ctx.strokeStyle='#dceaf0aa';ctx.lineWidth=1.4;for(let x=goal.x;x<=goal.x+goal.w;x+=25){ctx.beginPath();ctx.moveTo(x,goal.y);ctx.lineTo(x,goal.y+goal.h);ctx.stroke();}
+ for(let y=goal.y;y<=goal.y+goal.h;y+=21){ctx.beginPath();ctx.moveTo(goal.x,y);ctx.lineTo(goal.x+goal.w,y);ctx.stroke();}
+ ctx.strokeStyle='#f5f7f4';ctx.lineWidth=9;ctx.lineJoin='round';ctx.strokeRect(goal.x,goal.y,goal.w,goal.h);
 }
-
-function roundRect(ctx, x, y, width, height, radius) {
-  ctx.beginPath();
-  ctx.moveTo(x + radius, y);
-  ctx.lineTo(x + width - radius, y);
-  ctx.quadraticCurveTo(x + width, y, x + width, y + radius);
-  ctx.lineTo(x + width, y + height - radius);
-  ctx.quadraticCurveTo(x + width, y + height, x + width - radius, y + height);
-  ctx.lineTo(x + radius, y + height);
-  ctx.quadraticCurveTo(x, y + height, x, y + height - radius);
-  ctx.lineTo(x, y + radius);
-  ctx.quadraticCurveTo(x, y, x + radius, y);
-  ctx.closePath();
+function keeper(ctx,x,y,dive=0){
+ ctx.save();ctx.translate(x,y);ctx.rotate(dive*.35);
+ ellipse(ctx,0,5,64,9,'#0005');
+ const limb=(ax,ay,bx,by,width,color)=>{ctx.strokeStyle=color;ctx.lineWidth=width;ctx.lineCap='round';ctx.beginPath();ctx.moveTo(ax,ay);ctx.lineTo(bx,by);ctx.stroke();};
+ limb(-13,-54,-35,-23,19,'#152633');limb(-35,-23,-47,0,13,'#13222a');limb(13,-54,35,-23,19,'#152633');limb(35,-23,47,0,13,'#13222a');
+ limb(-15,-95,-42,-75,17,'#26a3b2');limb(-42,-75,-59,-55,13,'#1e8293');limb(15,-95,42,-75,17,'#26a3b2');limb(42,-75,59,-55,13,'#1e8293');ellipse(ctx,-61,-53,9,12,'#f2e7bd');ellipse(ctx,61,-53,9,12,'#f2e7bd');
+ box(ctx,-27,-110,54,63,14,gradient(ctx,-26,-105,52,0,[[0,'#126578'],[.5,'#32b7c7'],[1,'#126578']]));ellipse(ctx,0,-127,15,18,'#c89b72');ellipse(ctx,0,-138,15,9,'#252524');txt(ctx,'1',0,-85,21,'#fff',true,'center');
+ ellipse(ctx,-49,0,14,6,'#e5edf0');ellipse(ctx,49,0,14,6,'#e5edf0');ctx.restore();
 }
-
-function formatCoins(value) {
-  return Number(value || 0).toLocaleString('pt-BR');
-}
-
-function formatMultiplier(value) {
-  return `${Number(value || 1).toFixed(2).replace('.', ',')}x`;
-}
-
-function cover(ctx, x, y, width, height, color = '#061426') {
-  ctx.fillStyle = color;
-  ctx.fillRect(x, y, width, height);
-}
-
-function drawProgress(ctx, round, goals, status) {
-  cover(ctx, 365, 18, 300, 50, '#061426');
-  for (let i = 0; i < 5; i += 1) {
-    const x = 389 + i * 58;
-    const active = i < goals;
-    const current = status === 'choosing' && i === round;
-    ctx.strokeStyle = active ? '#72ffba' : current ? '#61e7ff' : 'rgba(151,184,216,0.55)';
-    ctx.lineWidth = 2;
-    ctx.beginPath();
-    ctx.arc(x, 46, 12, 0, Math.PI * 2);
-    ctx.stroke();
-    ctx.fillStyle = active ? '#39f89d' : current ? '#61e7ff' : '#172c4c';
-    ctx.beginPath();
-    ctx.arc(x, 46, 8, 0, Math.PI * 2);
-    ctx.fill();
-    if (i < 4) {
-      ctx.strokeStyle = i < goals - 1 ? '#39f89d' : 'rgba(151,184,216,0.35)';
-      ctx.lineWidth = 3;
-      ctx.beginPath();
-      ctx.moveTo(x + 14, 46);
-      ctx.lineTo(x + 44, 46);
-      ctx.stroke();
-    }
-  }
-}
-
-function drawGoal(ctx) {
-  ctx.fillStyle = 'rgba(3, 16, 30, 0.76)';
-  ctx.fillRect(GOAL.left, GOAL.top, GOAL.width, GOAL.height);
-  ctx.strokeStyle = 'rgba(225, 246, 255, 0.30)';
-  ctx.lineWidth = 1;
-  for (let i = 0; i <= 10; i += 1) {
-    const x = GOAL.left + (GOAL.width / 10) * i;
-    ctx.beginPath();
-    ctx.moveTo(x, GOAL.top);
-    ctx.lineTo(x, GOAL.top + GOAL.height);
-    ctx.stroke();
-  }
-  for (let i = 0; i <= 5; i += 1) {
-    const y = GOAL.top + (GOAL.height / 5) * i;
-    ctx.beginPath();
-    ctx.moveTo(GOAL.left, y);
-    ctx.lineTo(GOAL.left + GOAL.width, y);
-    ctx.stroke();
-  }
-  ctx.strokeStyle = '#e8fbff';
-  ctx.shadowColor = '#58ddff';
-  ctx.shadowBlur = 14;
-  ctx.lineWidth = 5;
-  ctx.strokeRect(GOAL.left, GOAL.top, GOAL.width, GOAL.height);
-  ctx.shadowBlur = 0;
-}
-
-function targetPosition(direction) {
-  if (direction === 'left') return { x: GOAL.left + 120, y: GOAL.top + 72 };
-  if (direction === 'right') return { x: GOAL.left + GOAL.width - 120, y: GOAL.top + 72 };
-  return { x: GOAL.left + GOAL.width / 2, y: GOAL.top + 76 };
-}
-
-function drawKeeper(ctx, direction, saved) {
-  const target = targetPosition(direction);
-  const x = target.x;
-  const y = GOAL.top + 178;
-  ctx.save();
-  ctx.translate(x, y);
-  ctx.strokeStyle = saved ? '#ff718a' : '#73e5ff';
-  ctx.fillStyle = saved ? '#be405c' : '#257ba7';
-  ctx.shadowColor = saved ? '#ff617d' : '#5de5ff';
-  ctx.shadowBlur = 14;
-  ctx.lineWidth = 8;
-  ctx.lineCap = 'round';
-  ctx.beginPath();
-  ctx.moveTo(0, 0); ctx.lineTo(0, -72); ctx.stroke();
-  ctx.fillRect(-25, -60, 50, 58);
-  ctx.beginPath(); ctx.arc(0, -88, 18, 0, Math.PI * 2); ctx.fill();
-  ctx.beginPath();
-  ctx.moveTo(-13, -46); ctx.lineTo(-68, -87);
-  ctx.moveTo(13, -46); ctx.lineTo(68, -87);
-  ctx.moveTo(-13, -7); ctx.lineTo(-34, 45);
-  ctx.moveTo(13, -7); ctx.lineTo(34, 45);
-  ctx.stroke();
-  ctx.restore();
-}
-
-function drawBall(ctx, direction, status) {
-  const target = direction ? targetPosition(direction) : { x: GOAL.left + GOAL.width / 2, y: 485 };
-  const start = { x: GOAL.left + GOAL.width / 2, y: 493 };
-  if (direction && status !== 'choosing') {
-    ctx.strokeStyle = status === 'saved' ? '#ff6685' : '#79f8bf';
-    ctx.lineWidth = 4;
-    ctx.shadowColor = ctx.strokeStyle;
-    ctx.shadowBlur = 12;
-    ctx.beginPath();
-    ctx.moveTo(start.x, start.y);
-    ctx.quadraticCurveTo((start.x + target.x) / 2, target.y + 92, target.x, target.y);
-    ctx.stroke();
-    ctx.shadowBlur = 0;
-  }
-  ctx.fillStyle = '#fffbea';
-  ctx.shadowColor = status === 'saved' ? '#ff587f' : '#a5ffd5';
-  ctx.shadowBlur = 14;
-  ctx.beginPath();
-  ctx.arc(target.x, target.y, 13, 0, Math.PI * 2);
-  ctx.fill();
-  ctx.shadowBlur = 0;
-  ctx.strokeStyle = status === 'saved' ? '#ff637e' : '#4ba9c5';
-  ctx.lineWidth = 2;
-  ctx.stroke();
-}
-
-function drawResultPanel(ctx, status, shot, keeperDirection) {
-  if (status === 'choosing') return;
-  const goal = status === 'goal' || status === 'cashed' || status === 'won';
-  const color = goal ? COLORS.green : COLORS.red;
-  ctx.fillStyle = 'rgba(3, 12, 25, 0.94)';
-  ctx.beginPath();
-  ctx.moveTo(310, 390); ctx.lineTo(714, 390); ctx.lineTo(750, 449);
-  ctx.lineTo(714, 486); ctx.lineTo(310, 486); ctx.lineTo(274, 449); ctx.closePath();
-  ctx.fill();
-  ctx.strokeStyle = color;
-  ctx.lineWidth = 2;
-  ctx.stroke();
-  ctx.fillStyle = color;
-  ctx.font = '700 42px PenaltyBold';
-  ctx.textAlign = 'center';
-  ctx.shadowColor = color;
-  ctx.shadowBlur = 14;
-  ctx.fillText(status === 'saved' ? 'DEFESA!' : status === 'won' ? 'VITÓRIA!' : goal ? 'GOL!' : 'DEFESA!', 512, 440);
-  ctx.shadowBlur = 0;
-  ctx.font = '400 14px PenaltyRegular';
-  ctx.fillStyle = COLORS.muted;
-  ctx.fillText(
-    status === 'saved'
-      ? `O goleiro acertou ${keeperDirection === 'left' ? 'a esquerda' : keeperDirection === 'right' ? 'a direita' : 'o meio'}`
-      : `Cobrança no canto ${shot === 'left' ? 'esquerdo' : shot === 'right' ? 'direito' : 'central'}`,
-    512,
-    468,
-  );
-  ctx.textAlign = 'left';
-}
-
-export async function generatePenaltyCard({
-  round = 0,
-  goals = 0,
-  status = 'choosing',
-  shot = null,
-  keeperDirection = 'center',
-  bet = 0,
-  payout = 0,
-  multiplier = 1,
-}) {
-  const template = await getTemplate();
-  const canvas = createCanvas(template.width, template.height);
-  const ctx = canvas.getContext('2d');
-  ctx.drawImage(template, 0, 0, template.width, template.height);
-  ctx.save();
-  ctx.scale(template.width / DESIGN_W, template.height / DESIGN_H);
-
-  const saved = status === 'saved';
-  const won = status === 'won';
-  const active = status === 'choosing' || status === 'goal';
-  const accent = saved ? COLORS.red : COLORS.green;
-
-  drawProgress(ctx, round, goals, status);
-  cover(ctx, 805, 26, 145, 68, '#061426');
-  ctx.fillStyle = COLORS.text;
-  ctx.font = '700 25px PenaltyBold';
-  ctx.fillText(`${goals} / 5`, 821, 58);
-  ctx.font = '400 12px PenaltyRegular';
-  ctx.fillStyle = COLORS.muted;
-  ctx.fillText('GOLS', 889, 57);
-
-  cover(ctx, 356, 86, 312, 109, '#061426');
-  ctx.fillStyle = saved ? COLORS.red : won ? COLORS.gold : COLORS.green;
-  ctx.font = '700 58px PenaltyBold';
-  ctx.textAlign = 'center';
-  ctx.shadowColor = ctx.fillStyle;
-  ctx.shadowBlur = 14;
-  ctx.fillText(formatMultiplier(multiplier), 512, 134);
-  ctx.shadowBlur = 0;
-  ctx.font = '400 12px PenaltyRegular';
-  ctx.fillStyle = COLORS.muted;
-  ctx.fillText(
-    status === 'choosing' ? 'ESCOLHA O CANTO DA COBRANÇA' : saved ? 'A DISPUTA TERMINOU' : 'MULTIPLICADOR ATUAL',
-    512,
-    177,
-  );
-  ctx.textAlign = 'left';
-
-  cover(ctx, 214, 190, 620, 300, '#061528');
-  drawGoal(ctx);
-  drawKeeper(ctx, keeperDirection, saved);
-  drawBall(ctx, shot, status);
-  drawResultPanel(ctx, status, shot, keeperDirection);
-
-  cover(ctx, 100, 484, 108, 73, '#061426');
-  cover(ctx, 288, 484, 174, 73, '#061426');
-  ctx.font = '400 12px PenaltyRegular';
-  ctx.fillStyle = COLORS.muted;
-  ctx.fillText('APOSTA', 108, 502);
-  ctx.fillText('RETORNO SE SACAR', 296, 502);
-  ctx.font = '700 22px PenaltyBold';
-  ctx.fillStyle = COLORS.text;
-  ctx.fillText(formatCoins(bet), 108, 532);
-  ctx.fillStyle = saved ? COLORS.red : COLORS.green;
-  ctx.fillText(formatCoins(payout), 296, 532);
-
-  cover(ctx, 820, 495, 204, 58, '#061426');
-  ctx.font = '400 13px PenaltyRegular';
-  ctx.fillStyle = COLORS.muted;
-  ctx.textAlign = 'right';
-  ctx.fillText(
-    status === 'choosing'
-      ? `Cobrança ${Math.min(round + 1, 5)} de 5`
-      : saved
-        ? 'Aposta perdida'
-        : won
-          ? 'Sequência completa'
-          : active
-            ? 'Você decide quando parar'
-            : 'Rodada encerrada',
-    965,
-    532,
-  );
-  ctx.textAlign = 'left';
-  ctx.restore();
-  return canvas.toBuffer('image/png');
+function ball(ctx,x,y,r){ellipse(ctx,x,y+r*.8,r*1.2,r*.25,'#0005');const g=ctx.createRadialGradient(x-r*.3,y-r*.3,1,x,y,r);g.addColorStop(0,'#fff');g.addColorStop(1,'#acbdc1');ellipse(ctx,x,y,r,r,g,'#ddd',1);for(let k=0;k<5;k++){const a=k*Math.PI*2/5;ellipse(ctx,x+Math.cos(a)*r*.62,y+Math.sin(a)*r*.62,r*.16,r*.18,'#273d4a');}ellipse(ctx,x,y,r*.23,r*.23,'#273d4a');}
+export async function generatePenaltyCard({round=0,goals=0,status='choosing',shot=null,keeperDirection='center',bet=0,payout=0,multiplier=1,name='',avatar:av=null}={}){
+ const [c,ctx]=scene();stadium(ctx);const choosing=status==='choosing',saved=status==='saved',end=!choosing&&shot;
+ const k=end?keeperDirection:'center';keeper(ctx,at(k),goal.y+goal.h-6,end?(k==='left'?-1:k==='right'?1:0):0);
+ if(end){const x=at(shot),y=goal.y+goal.h*.33;ctx.save();ctx.strokeStyle=saved?'#f2a09a':'#9be1b3';ctx.lineWidth=3;ctx.setLineDash([9,9]);ctx.beginPath();ctx.moveTo(600,598);ctx.quadraticCurveTo((600+x)/2,385,x,y);ctx.stroke();ctx.restore();ball(ctx,x,y,13);}else{ellipse(ctx,600,593,41,13,'#eef1e1');ball(ctx,600,570,34);}
+ box(ctx,30,25,1140,103,20,'#081b28eb','#427c90');await avatar(ctx,av,87,76,36,name,'#6ccddc');txt(ctx,name||'Jogador',139,60,25,'#fff',true,'left',330);txt(ctx,'Cobrança '+Math.min(round+(choosing?1:0),5)+'/5',139,94,17,'#b5d6df',false);
+ const stats=[['GOLS',goals+'/5'],['APOSTA',coins(bet)],['MULTIPLICADOR',Number(multiplier).toFixed(2)+'x'],['RETORNO',coins(payout)]];
+ stats.forEach(([label,value],i)=>{const x=465+i*173;txt(ctx,label,x,54,13,'#9ab6c4',false);txt(ctx,value,x,85,24);});
+ if(!choosing){const label={goal:'GOL!',saved:'DEFESA!',cashed:'SAQUE CONFIRMADO',won:'VITÓRIA!'}[status]??'RODADA ENCERRADA';box(ctx,425,535,350,69,14,'#081b28ee',saved?'#ed8078':'#84d5ac',2);txt(ctx,label,600,570,29,saved?'#f6b5ad':'#d4f3df',true,'center');}
+ return png(c);
 }

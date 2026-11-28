@@ -161,6 +161,7 @@ function createGame(ctx) {
   const host = {
     id: ctx.user?.id ?? ctx.author?.id,
     name: ctx.member?.displayName ?? ctx.user?.username ?? ctx.author?.username ?? 'Jogador',
+    avatar: (ctx.user??ctx.author)?.displayAvatarURL?.({size:128}),
   };
   const game = {
     id: gameId(),
@@ -285,8 +286,8 @@ function boardText(game, notice = '') {
 
 async function boardPayload(game, notice = '') {
   const top = game.discard.at(-1);
-  const filename = `uno-${game.id}-${top.id}.png`;
-  const image = await generateUnoTable(top,{color:game.activeColor,players:game.players.map(p=>({name:playerName(p),count:p.hand.length,active:p.id===currentPlayer(game)?.id})),direction:game.direction});
+  const filename = `uno-${game.id}-${top.id}-${game.turnVersion}-${Date.now()}.png`;
+  const image = await generateUnoTable(top,{color:game.activeColor,players:game.players.map(p=>({name:playerName(p),avatar:p.avatar,count:p.hand.length,active:p.id===currentPlayer(game)?.id})),direction:game.direction});
   const container = new ContainerBuilder()
     .addMediaGalleryComponents(
       new MediaGalleryBuilder().addItems(
@@ -545,7 +546,7 @@ export async function handleUnoInteraction(interaction) {
     if (game.status !== 'lobby') return interaction.reply(v2Notice('❌ A partida já começou.'));
     if (player) return interaction.reply(v2Notice('✅ Você já está nesta mesa.'));
     if (game.players.length >= MAX_PLAYERS) return interaction.reply(v2Notice('❌ A mesa está cheia.'));
-    game.players.push({ id: userId, name: interaction.member?.displayName ?? interaction.user.username });
+    game.players.push({ id: userId, name: interaction.member?.displayName ?? interaction.user.username, avatar:interaction.user.displayAvatarURL?.({size:128}) });
     touch(game);
     game.messageId = interaction.message.id;
     return interaction.update(lobbyPayload(game));

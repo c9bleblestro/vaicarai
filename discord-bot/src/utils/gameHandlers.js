@@ -131,6 +131,7 @@ async function buildBJAttachment(state, hideDealer) {
     hideDealer,
     status: state.status,
     result: state.result,
+    name:state.artMember?.name,avatar:state.artMember?.avatar,
   });
 
   // Filename único por update — impede Discord de exibir a imagem cacheada
@@ -323,6 +324,7 @@ export async function startBlackjack(ctx, bet, sendFn) {
     bet,
     player,
     dealer,
+    artMember:memberInfo(ctx),
     deck,
     status: 'playing',
     won: false,
@@ -564,6 +566,7 @@ async function buildCrashPayload(state) {
     bet: state.bet,
     payout: state.payout ?? 0,
     elapsedMs: Date.now() - state.startedAt,
+    name:state.artMember?.name,avatar:state.artMember?.avatar,
   });
   const filename = `crash_${state.userId}_${state.tick}_${state.status}_${Date.now()}.png`;
   const attachment = new AttachmentBuilder(image, { name: filename });
@@ -653,6 +656,7 @@ export async function startCrash(ctx, bet, sendFn) {
     userId,
     guildId,
     bet,
+    artMember:memberInfo(ctx),
     crashAt: pickCrashPoint(),
     multiplier: 1,
     payout: 0,
@@ -772,6 +776,7 @@ async function buildPenaltyPayload(state) {
     bet: state.bet,
     payout: state.payout,
     multiplier: state.multiplier,
+    name:state.artMember?.name,avatar:state.artMember?.avatar,
   });
   const filename = `penalty_${state.userId}_${state.renderId}_${state.status}_${Date.now()}.png`;
   const attachment = new AttachmentBuilder(image, { name: filename });
@@ -858,6 +863,7 @@ export async function startPenalty(ctx, bet, sendFn) {
     status: 'choosing',
     lastShot: null,
     lastKeeperDirection: 'center',
+    artMember:memberInfo(ctx),
     keeperDirections: Array.from({ length: PENALTY_ROUNDS }, pickPenaltyDirection),
     renderId: 0,
     resolving: false,
